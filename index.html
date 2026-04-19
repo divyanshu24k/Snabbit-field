@@ -5,123 +5,203 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Snabbit Field Agent</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
   :root {
-    --bg: #0a0a0f; --surface: #13131a; --surface2: #1c1c26; --border: #2a2a3a;
-    --accent: #00e5a0; --accent2: #7c6cff; --warn: #ff6b4a;
-    --text: #f0f0f5; --muted: #6b6b80; --radius: 16px;
+    --bg: #FDE8F0; --surface: #FFFFFF; --surface2: #FEF0F6; --border: #F9C0D8;
+    --accent: #FF1F7D; --accent-light: #FF4D96; --accent-dark: #D4006A;
+    --navy: #1E1B4B; --navy2: #2D2A5E; --text: #1E1B4B; --muted: #9090A0;
+    --success: #00C48C; --error: #FF3B5C; --radius: 16px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; max-width: 480px; margin: 0 auto; padding: 0 0 80px 0; }
-  .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
-  .logo { font-family: 'Space Mono', monospace; font-size: 18px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
-  .logo span { color: var(--text); }
-  .agent-badge { background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 6px 12px; font-size: 12px; color: var(--muted); cursor: pointer; transition: all 0.2s; }
-  .agent-badge.set { color: var(--accent); border-color: var(--accent); }
-  .screen { display: none; padding: 24px 20px; animation: fadeUp 0.3s ease; }
+  body { background: var(--bg); color: var(--text); font-family: 'Nunito', sans-serif; min-height: 100vh; max-width: 480px; margin: 0 auto; padding: 0 0 80px 0; }
+
+  /* ── HEADER ── */
+  .header { background: var(--surface); padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(255,31,125,0.1); border-bottom: 2px solid var(--border); }
+  .logo { font-size: 22px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; }
+  .logo-sub { color: var(--muted); font-size: 13px; font-weight: 600; margin-left: 6px; }
+  .agent-badge { background: var(--navy); border-radius: 20px; padding: 7px 14px; font-size: 13px; font-weight: 700; color: #fff; cursor: pointer; transition: all 0.2s; display:none; }
+  .agent-badge:hover { background: var(--navy2); }
+
+  /* ── SCREENS ── */
+  .screen { display: none; padding: 28px 20px; animation: fadeUp 0.3s ease; }
   .screen.active { display: block; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-  .big-label { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; }
-  .big-title { font-size: 28px; font-weight: 600; line-height: 1.2; margin-bottom: 6px; }
-  .sub { color: var(--muted); font-size: 14px; margin-bottom: 32px; line-height: 1.5; }
-  .input-wrap { position: relative; margin-bottom: 16px; }
-  .input-wrap input, .input-wrap textarea { width: 100%; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 16px 18px; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 16px; outline: none; transition: border-color 0.2s; -webkit-appearance: none; }
-  .input-wrap input:focus, .input-wrap textarea:focus { border-color: var(--accent); }
-  .input-wrap input::placeholder, .input-wrap textarea::placeholder { color: var(--muted); }
-  .input-wrap textarea { resize: none; height: 80px; }
-  .btn { width: 100%; padding: 17px; border-radius: var(--radius); border: none; font-family: 'DM Sans', sans-serif; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-  .btn-primary { background: var(--accent); color: #000; }
-  .btn-primary:hover { background: #00ffa8; transform: translateY(-1px); }
-  .btn-primary:active { transform: translateY(0); }
-  .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
-  .btn-secondary { background: var(--surface2); color: var(--text); border: 1.5px solid var(--border); margin-top: 12px; }
-  .btn-secondary:hover { border-color: var(--accent2); }
-  .gps-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: 24px; padding: 40px 24px; text-align: center; margin-bottom: 20px; }
-  .gps-icon { width: 72px; height: 72px; background: linear-gradient(135deg, var(--accent2), var(--accent)); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 30px; }
-  .gps-icon.pulsing { animation: pulse 1.5s infinite; }
-  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(0,229,160,0.4); } 50% { box-shadow: 0 0 0 20px rgba(0,229,160,0); } }
-  .coord-display { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--accent); margin-top: 12px; background: var(--surface2); padding: 10px 16px; border-radius: 10px; }
-  .results-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
-  .pill { font-family: 'Space Mono', monospace; font-size: 11px; padding: 5px 12px; border-radius: 20px; font-weight: 700; letter-spacing: 0.5px; }
-  .pill-match { background: rgba(0,229,160,0.15); color: var(--accent); border: 1px solid rgba(0,229,160,0.3); }
-  .pill-count { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
-  .society-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: 20px; padding: 18px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; }
-  .society-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent2); border-radius: 4px 0 0 4px; opacity: 0; transition: opacity 0.2s; }
-  .society-card:hover { border-color: var(--accent2); transform: translateX(2px); }
-  .society-card:hover::before { opacity: 1; }
-  .society-card.selected { border-color: var(--accent); background: rgba(0,229,160,0.05); }
-  .society-card.selected::before { opacity: 1; background: var(--accent); }
-  .s-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; padding-right: 48px; }
-  .s-meta { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
-  .s-dist { position: absolute; top: 14px; right: 14px; font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); background: rgba(0,229,160,0.1); padding: 3px 8px; border-radius: 8px; }
-  .s-tier { display: inline-block; font-size: 10px; background: rgba(124,108,255,0.15); color: var(--accent2); border-radius: 6px; padding: 2px 7px; margin-top: 6px; }
-  .divider { display: flex; align-items: center; gap: 12px; margin: 24px 0; color: var(--muted); font-size: 12px; }
-  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-  .success-card { background: var(--surface); border: 1.5px solid var(--accent); border-radius: 24px; padding: 40px 24px; text-align: center; margin-bottom: 20px; }
-  .success-icon { width: 72px; height: 72px; background: rgba(0,229,160,0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 32px; }
-  .success-detail { background: var(--surface2); border-radius: 12px; padding: 16px; margin-top: 20px; text-align: left; }
-  .detail-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-  .detail-row:last-child { border-bottom: none; }
-  .detail-row span:first-child { color: var(--muted); }
-  .detail-row span:last-child { font-weight: 500; color: var(--accent); font-family: 'Space Mono', monospace; font-size: 12px; max-width: 60%; text-align: right; word-break: break-word; }
-  .loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 20px; color: var(--muted); font-size: 14px; }
-  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .error-msg { background: rgba(255,107,74,0.1); border: 1px solid rgba(255,107,74,0.3); color: var(--warn); border-radius: 12px; padding: 12px 16px; font-size: 13px; margin-bottom: 16px; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ── STEP INDICATOR ── */
   .step-indicator { display: flex; gap: 6px; margin-bottom: 28px; }
-  .step-dot { height: 4px; flex: 1; border-radius: 2px; background: var(--border); transition: background 0.3s; }
+  .step-dot { height: 5px; flex: 1; border-radius: 3px; background: var(--border); transition: background 0.3s; }
   .step-dot.done { background: var(--accent); }
-  .step-dot.active { background: var(--accent2); }
-  .info-box { background: rgba(124,108,255,0.08); border: 1px solid rgba(124,108,255,0.2); border-radius: 12px; padding: 12px 16px; font-size: 13px; color: var(--accent2); margin-bottom: 20px; line-height: 1.5; }
+  .step-dot.active { background: var(--accent-light); }
+
+  /* ── TYPOGRAPHY ── */
+  .big-label { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+  .big-title { font-size: 26px; font-weight: 800; line-height: 1.2; margin-bottom: 6px; color: var(--navy); }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 28px; line-height: 1.6; font-weight: 500; }
+
+  /* ── INPUTS ── */
+  .input-wrap { margin-bottom: 14px; position: relative; }
+  .input-wrap label { display: block; font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .input-wrap input, .input-wrap textarea { width: 100%; background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius); padding: 15px 18px; color: var(--text); font-family: 'Nunito', sans-serif; font-size: 15px; font-weight: 600; outline: none; transition: border-color 0.2s, box-shadow 0.2s; -webkit-appearance: none; }
+  .input-wrap input:focus, .input-wrap textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,31,125,0.1); }
+  .input-wrap input::placeholder, .input-wrap textarea::placeholder { color: var(--muted); font-weight: 500; }
+  .input-wrap textarea { resize: none; height: 80px; }
+  .pw-toggle { position: absolute; right: 16px; bottom: 16px; cursor: pointer; font-size: 16px; color: var(--muted); user-select: none; }
+
+  /* ── BUTTONS ── */
+  .btn { width: 100%; padding: 16px; border-radius: var(--radius); border: none; font-family: 'Nunito', sans-serif; font-size: 16px; font-weight: 800; cursor: pointer; transition: all 0.2s; }
+  .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 16px rgba(255,31,125,0.35); }
+  .btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-secondary { background: var(--surface); color: var(--navy); border: 2px solid var(--border); margin-top: 12px; }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-link { background: none; border: none; color: var(--accent); font-family: 'Nunito', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; padding: 8px 0; text-decoration: underline; }
+
+  /* ── MESSAGES ── */
+  .error-msg { background: #FFF0F5; border: 1.5px solid rgba(255,31,125,0.3); color: var(--error); border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
+  .success-msg { background: rgba(0,196,140,0.08); border: 1.5px solid rgba(0,196,140,0.3); color: #00966A; border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
+  .info-box { background: var(--surface2); border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 14px; font-weight: 600; color: var(--navy2); margin-bottom: 20px; line-height: 1.6; }
+
+  /* ── LOGIN CARD ── */
+  .login-hero { text-align: center; padding: 32px 20px 20px; }
+  .login-logo-big { font-size: 36px; font-weight: 800; color: var(--accent); letter-spacing: -1px; margin-bottom: 4px; }
+  .login-tagline { font-size: 13px; color: var(--muted); font-weight: 600; }
+  .login-card { background: var(--surface); border: 2px solid var(--border); border-radius: 24px; padding: 28px 24px; margin: 0 20px; box-shadow: 0 4px 24px rgba(255,31,125,0.08); }
+
+  /* ── GPS CARD ── */
+  .gps-card { background: var(--surface); border: 2px solid var(--border); border-radius: 24px; padding: 36px 24px; text-align: center; margin-bottom: 20px; box-shadow: 0 2px 16px rgba(255,31,125,0.07); }
+  .gps-icon { width: 76px; height: 76px; background: linear-gradient(135deg, var(--accent), #FF6EB0); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; font-size: 32px; box-shadow: 0 6px 20px rgba(255,31,125,0.35); }
+  .gps-icon.pulsing { animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,31,125,0.4); } 50% { box-shadow: 0 0 0 20px rgba(255,31,125,0); } }
+  .gps-status { font-size: 15px; font-weight: 700; color: var(--navy); }
+  .coord-display { font-size: 12px; font-weight: 700; color: var(--accent); margin-top: 12px; background: var(--surface2); padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border); }
+
+  /* ── SOCIETY CARDS ── */
+  .results-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .pill { font-size: 11px; font-weight: 800; padding: 5px 12px; border-radius: 20px; letter-spacing: 0.5px; text-transform: uppercase; }
+  .pill-match { background: rgba(255,31,125,0.1); color: var(--accent); border: 1.5px solid rgba(255,31,125,0.25); }
+  .pill-count { background: var(--surface); color: var(--muted); border: 1.5px solid var(--border); }
+  .society-card { background: var(--surface); border: 2px solid var(--border); border-radius: 20px; padding: 16px 18px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; position: relative; box-shadow: 0 1px 8px rgba(0,0,0,0.04); }
+  .society-card:hover { border-color: var(--accent-light); transform: translateY(-1px); }
+  .society-card.selected { border-color: var(--accent); background: #FFF0F6; }
+  .s-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; padding-right: 52px; color: var(--navy); }
+  .s-meta { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; font-weight: 600; }
+  .s-dist { position: absolute; top: 14px; right: 14px; font-size: 11px; font-weight: 800; color: var(--accent); background: rgba(255,31,125,0.1); padding: 3px 9px; border-radius: 8px; }
+  .s-tier { display: inline-block; font-size: 10px; font-weight: 700; background: var(--navy); color: #fff; border-radius: 6px; padding: 2px 8px; margin-top: 6px; }
+
+  /* ── DIVIDER ── */
+  .divider { display: flex; align-items: center; gap: 12px; margin: 24px 0; color: var(--muted); font-size: 12px; font-weight: 700; }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1.5px; background: var(--border); }
+
+  /* ── SUCCESS ── */
+  .success-card { background: var(--surface); border: 2px solid var(--success); border-radius: 24px; padding: 40px 24px; text-align: center; margin-bottom: 20px; }
+  .success-icon { width: 76px; height: 76px; background: linear-gradient(135deg, var(--success), #00E5A0); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; font-size: 32px; }
+  .success-detail { background: var(--bg); border-radius: 14px; padding: 16px; margin-top: 20px; text-align: left; border: 1.5px solid var(--border); }
+  .detail-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-row span:first-child { color: var(--muted); font-weight: 600; }
+  .detail-row span:last-child { font-weight: 700; color: var(--navy); font-size: 13px; max-width: 60%; text-align: right; word-break: break-word; }
+
+  /* ── LOADING ── */
+  .loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 24px; color: var(--muted); font-size: 14px; font-weight: 600; }
+  .spinner { width: 20px; height: 20px; border: 2.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <div class="logo">snab<span>bit</span> <span style="color:var(--muted);font-size:12px;font-family:'DM Sans'">field</span></div>
-  <div class="agent-badge" id="agentBadge" onclick="changeAgent()">Set Name</div>
+  <div class="logo">Snabbit <span class="logo-sub">field</span></div>
+  <div class="agent-badge" id="agentBadge" onclick="logout()">Logout</div>
 </div>
 
-<!-- SCREEN 1: Agent Name -->
-<div class="screen active" id="screen-name">
-  <div class="step-indicator">
-    <div class="step-dot active"></div><div class="step-dot"></div><div class="step-dot"></div>
+<!-- ── SCREEN: LOGIN ── -->
+<div class="screen active" id="screen-login">
+  <div class="login-hero">
+    <div class="login-logo-big">Snabbit</div>
+    <div class="login-tagline">Field Agent Portal</div>
   </div>
-  <div class="big-label">Step 1 of 3</div>
-  <div class="big-title">Who are you?</div>
-  <p class="sub">Your name will be recorded with every visit. You only need to do this once per session.</p>
+  <div class="login-card">
+    <div class="big-label" style="margin-bottom:20px">Sign In</div>
+    <div id="loginError" class="error-msg"></div>
+    <div class="input-wrap">
+      <label>Username</label>
+      <input type="text" id="loginUsername" placeholder="Enter your username" autocomplete="username" autocapitalize="none" />
+    </div>
+    <div class="input-wrap">
+      <label>Password</label>
+      <input type="password" id="loginPassword" placeholder="Enter your password" autocomplete="current-password" />
+      <span class="pw-toggle" onclick="togglePw('loginPassword', this)">👁</span>
+    </div>
+    <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Sign In →</button>
+    <div style="text-align:center;margin-top:16px">
+      <button class="btn-link" onclick="showScreen('screen-changepass')">Change Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SCREEN: CHANGE PASSWORD ── -->
+<div class="screen" id="screen-changepass">
+  <div class="big-label">Account</div>
+  <div class="big-title">Change Password</div>
+  <p class="sub">Enter your username and current password, then set a new one.</p>
+  <div id="cpError" class="error-msg"></div>
+  <div id="cpSuccess" class="success-msg"></div>
   <div class="input-wrap">
-    <input type="text" id="agentNameInput" placeholder="Enter your full name" autocomplete="name" />
+    <label>Username</label>
+    <input type="text" id="cpUsername" placeholder="Your username" autocapitalize="none" />
   </div>
-  <button class="btn btn-primary" onclick="setAgentName()">Continue →</button>
+  <div class="input-wrap">
+    <label>Current Password</label>
+    <input type="password" id="cpOldPassword" placeholder="Current password" />
+    <span class="pw-toggle" onclick="togglePw('cpOldPassword', this)">👁</span>
+  </div>
+  <div class="input-wrap">
+    <label>New Password</label>
+    <input type="password" id="cpNewPassword" placeholder="New password (min 6 characters)" />
+    <span class="pw-toggle" onclick="togglePw('cpNewPassword', this)">👁</span>
+  </div>
+  <div class="input-wrap">
+    <label>Confirm New Password</label>
+    <input type="password" id="cpConfirmPassword" placeholder="Repeat new password" />
+    <span class="pw-toggle" onclick="togglePw('cpConfirmPassword', this)">👁</span>
+  </div>
+  <button class="btn btn-primary" id="cpBtn" onclick="doChangePassword()">Update Password</button>
+  <button class="btn btn-secondary" onclick="showScreen('screen-login')">← Back to Login</button>
 </div>
 
-<!-- SCREEN 2: GPS -->
+<!-- ── SCREEN: GPS ── -->
 <div class="screen" id="screen-gps">
   <div class="step-indicator">
-    <div class="step-dot done"></div><div class="step-dot active"></div><div class="step-dot"></div>
+    <div class="step-dot active"></div><div class="step-dot"></div>
   </div>
-  <div class="big-label">Step 2 of 3</div>
+  <div class="big-label">Step 1 of 2</div>
   <div class="big-title">Where are you?</div>
-  <p class="sub">Stand at the main gate of the society. Then tap to capture your location.</p>
+  <p class="sub">Stand at the main gate of the society, then tap to capture your location.</p>
   <div class="gps-card">
     <div class="gps-icon" id="gpsIcon">📍</div>
-    <div id="gpsStatus" style="font-size:15px;font-weight:500;">Ready to detect location</div>
+    <div class="gps-status" id="gpsStatus">Ready to detect location</div>
     <div id="coordDisplay" class="coord-display" style="display:none"></div>
   </div>
-  <div id="gpsError" class="error-msg" style="display:none"></div>
+  <div id="gpsError" class="error-msg" style="display:block"></div>
   <button class="btn btn-primary" id="gpsBtn" onclick="getLocation()">📍 Get My Location</button>
-  <button class="btn btn-secondary" onclick="goBack('screen-name')">← Back</button>
 </div>
 
-<!-- SCREEN 3: Results -->
+<!-- ── SCREEN: RESULTS ── -->
 <div class="screen" id="screen-results">
   <div class="step-indicator">
-    <div class="step-dot done"></div><div class="step-dot done"></div><div class="step-dot active"></div>
+    <div class="step-dot done"></div><div class="step-dot active"></div>
   </div>
-  <div class="big-label">Step 3 of 3</div>
+  <div class="big-label">Step 2 of 2</div>
   <div class="big-title">Nearby Societies</div>
   <div id="resultsContent"></div>
+  <div id="confirmMatchForm" style="display:none">
+    <div class="input-wrap" style="margin-top:4px">
+      <input type="number" id="existingFlatCount" placeholder="Confirm / update flat count" min="1" />
+    </div>
+    <button class="btn btn-primary" id="submitMatchBtn" onclick="submitMatch()">✓ Confirm This Society</button>
+    <button class="btn btn-secondary" onclick="showNewForm()">Not here — add new instead</button>
+  </div>
   <div id="newSocietyForm" style="display:none">
     <div class="divider">NEW SOCIETY</div>
     <p class="sub" style="margin-bottom:16px">Not in our database. Fill in the details below.</p>
@@ -136,35 +216,193 @@
     </div>
     <button class="btn btn-primary" id="submitNewBtn" onclick="submitNew()">Submit New Society</button>
   </div>
-  <div id="confirmMatchForm" style="display:none">
-    <div class="input-wrap" style="margin-top:16px">
-      <input type="number" id="existingFlatCount" placeholder="Confirm / update flat count" min="1" />
-    </div>
-    <button class="btn btn-primary" id="submitMatchBtn" onclick="submitMatch()">✓ Confirm This Society</button>
-    <button class="btn btn-secondary" onclick="showNewForm()">Not here — add new instead</button>
-  </div>
-  <button class="btn btn-secondary" style="margin-top:8px" onclick="goBack('screen-gps')">← Rescan Location</button>
+  <button class="btn btn-secondary" style="margin-top:8px" onclick="showScreen('screen-gps')">← Rescan Location</button>
 </div>
 
-<!-- SCREEN 4: Success -->
+<!-- ── SCREEN: SUCCESS ── -->
 <div class="screen" id="screen-success">
   <div class="success-card">
     <div class="success-icon">✓</div>
     <div class="big-title" style="font-size:24px">Submitted!</div>
-    <p style="color:var(--muted);font-size:14px;margin-top:8px">Entry recorded to Snabbit database.</p>
+    <p style="color:var(--muted);font-size:14px;margin-top:8px;font-weight:600;">Entry recorded to Snabbit database.</p>
     <div class="success-detail" id="successDetail"></div>
   </div>
   <button class="btn btn-primary" onclick="scanAnother()">Scan Another Society</button>
 </div>
 
 <script>
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbztUqE9KRLkcYPklyG5PeJVHUNx-u1-A6FTDxMIqvd-H_XFfJSX9wtcb55rmZf3Umixow/exec';
-const DB_SHEET_ID     = '1ZWfPa95bOhDnEhxTVahru6BpUsTijl9Po8vL2jpVK0A';
-const RADIUS_M        = 150;
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const APPS_SCRIPT_URL  = 'https://script.google.com/macros/s/AKfycby4h5mCtaqa4HNlgN77fwqwgQfP_31ZBGdGMKr9C6bkzCD1UU5dFWvUk7wO5uVXdc10Bw/exec';
+const DB_SHEET_ID      = '1ZWfPa95bOhDnEhxTVahru6BpUsTijl9Po8vL2jpVK0A';
+const CREDS_SHEET_ID   = '1Q4GpTRZMj2bGg025n6cMNrIkm1D6XJBqOr-bm2J8qCY';
+const RADIUS_M         = 150;
+const SESSION_HOURS    = 24;
 
+// ── STATE ─────────────────────────────────────────────────────────────────────
 let agentName = '', userLat = null, userLon = null;
-let database = [], dbLoaded = false, selectedSociety = null;
+let database  = [], dbLoaded = false, selectedSociety = null;
+let agentRow  = null; // row index in creds sheet for password update
 
+// ── SESSION MANAGEMENT ────────────────────────────────────────────────────────
+function saveSession(username, name) {
+  const expiry = Date.now() + SESSION_HOURS * 60 * 60 * 1000;
+  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, expiry }));
+}
+function loadSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem('snabbit_session'));
+    if (s && s.expiry > Date.now()) return s;
+  } catch(e) {}
+  return null;
+}
+function clearSession() {
+  localStorage.removeItem('snabbit_session');
+}
+
+// ── NAVIGATION ────────────────────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+// ── PASSWORD TOGGLE ───────────────────────────────────────────────────────────
+function togglePw(inputId, icon) {
+  const input = document.getElementById(inputId);
+  if (input.type === 'password') { input.type = 'text'; icon.textContent = '🙈'; }
+  else { input.type = 'password'; icon.textContent = '👁'; }
+}
+
+// ── LOAD CREDENTIALS SHEET ────────────────────────────────────────────────────
+async function loadCreds() {
+  const url = `https://docs.google.com/spreadsheets/d/${CREDS_SHEET_ID}/gviz/tq?tqx=out:csv`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  const rows = parseCSV(text);
+  // Find header row
+  const headerIdx = rows.findIndex(r =>
+    r.some(c => c.toLowerCase().includes('username'))
+  );
+  if (headerIdx === -1) throw new Error('Header not found');
+  const h       = rows[headerIdx].map(c => c.toLowerCase().trim());
+  const uIdx    = h.findIndex(c => c.includes('username'));
+  const pIdx    = h.findIndex(c => c.includes('password'));
+  const nIdx    = h.findIndex(c => c.includes('agent name') || c.includes('name'));
+  const aIdx    = h.findIndex(c => c.includes('active'));
+  return { rows, headerIdx, uIdx, pIdx, nIdx, aIdx };
+}
+
+// ── LOGIN ─────────────────────────────────────────────────────────────────────
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value.trim();
+  const errEl    = document.getElementById('loginError');
+  const btn      = document.getElementById('loginBtn');
+
+  errEl.style.display = 'none';
+  if (!username || !password) { showError(errEl, 'Please enter your username and password.'); return; }
+
+  btn.disabled = true; btn.textContent = 'Signing in…';
+
+  try {
+    const { rows, headerIdx, uIdx, pIdx, nIdx, aIdx } = await loadCreds();
+    const dataRows = rows.slice(headerIdx + 1);
+    const match = dataRows.find(r =>
+      r[uIdx]?.toLowerCase().trim() === username.toLowerCase() &&
+      r[pIdx]?.trim() === password &&
+      r[aIdx]?.toLowerCase().trim() === 'true'
+    );
+
+    if (!match) {
+      showError(errEl, 'Invalid username or password. Please try again.');
+      btn.disabled = false; btn.textContent = 'Sign In →';
+      return;
+    }
+
+    agentName = match[nIdx] || username;
+    saveSession(username, agentName);
+    onLoggedIn();
+
+  } catch(e) {
+    showError(errEl, 'Could not reach credentials server. Check your internet connection.');
+    btn.disabled = false; btn.textContent = 'Sign In →';
+  }
+}
+
+function onLoggedIn() {
+  const badge = document.getElementById('agentBadge');
+  badge.style.display = 'block';
+  badge.textContent   = agentName.split(' ')[0] + ' · Logout';
+  document.getElementById('loginBtn').disabled = false;
+  document.getElementById('loginBtn').textContent = 'Sign In →';
+  document.getElementById('loginUsername').value  = '';
+  document.getElementById('loginPassword').value  = '';
+  loadDatabase();
+  showScreen('screen-gps');
+}
+
+function logout() {
+  clearSession();
+  agentName = ''; userLat = null; userLon = null;
+  document.getElementById('agentBadge').style.display = 'none';
+  showScreen('screen-login');
+}
+
+// ── CHANGE PASSWORD ───────────────────────────────────────────────────────────
+async function doChangePassword() {
+  const username   = document.getElementById('cpUsername').value.trim();
+  const oldPw      = document.getElementById('cpOldPassword').value.trim();
+  const newPw      = document.getElementById('cpNewPassword').value.trim();
+  const confirmPw  = document.getElementById('cpConfirmPassword').value.trim();
+  const errEl      = document.getElementById('cpError');
+  const sucEl      = document.getElementById('cpSuccess');
+  const btn        = document.getElementById('cpBtn');
+
+  errEl.style.display = 'none'; sucEl.style.display = 'none';
+
+  if (!username || !oldPw || !newPw || !confirmPw) { showError(errEl, 'Please fill in all fields.'); return; }
+  if (newPw.length < 6) { showError(errEl, 'New password must be at least 6 characters.'); return; }
+  if (newPw !== confirmPw) { showError(errEl, 'New passwords do not match.'); return; }
+
+  btn.disabled = true; btn.textContent = 'Updating…';
+
+  try {
+    const { rows, headerIdx, uIdx, pIdx, aIdx } = await loadCreds();
+    const dataRows = rows.slice(headerIdx + 1);
+    const rowIdx   = dataRows.findIndex(r =>
+      r[uIdx]?.toLowerCase().trim() === username.toLowerCase() &&
+      r[pIdx]?.trim() === oldPw &&
+      r[aIdx]?.toLowerCase().trim() === 'true'
+    );
+
+    if (rowIdx === -1) { showError(errEl, 'Username or current password is incorrect.'); btn.disabled = false; btn.textContent = 'Update Password'; return; }
+
+    // Send update to Apps Script
+    await fetch(APPS_SCRIPT_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'changePassword',
+        username: username,
+        newPassword: newPw,
+        sheetId: CREDS_SHEET_ID
+      })
+    });
+
+    sucEl.textContent = 'Password updated successfully! Please login with your new password.';
+    sucEl.style.display = 'block';
+    ['cpUsername','cpOldPassword','cpNewPassword','cpConfirmPassword'].forEach(id => document.getElementById(id).value = '');
+    btn.disabled = false; btn.textContent = 'Update Password';
+
+  } catch(e) {
+    showError(errEl, 'Could not update password. Check your internet connection.');
+    btn.disabled = false; btn.textContent = 'Update Password';
+  }
+}
+
+function showError(el, msg) { el.textContent = msg; el.style.display = 'block'; }
+
+// ── DATABASE ──────────────────────────────────────────────────────────────────
 async function loadDatabase() {
   if (dbLoaded) return;
   const url = `https://docs.google.com/spreadsheets/d/${DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Clean+Residential+DB`;
@@ -210,33 +448,15 @@ function distanceM(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-function showScreen(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-}
-function goBack(s) { showScreen(s); }
-
-function setAgentName() {
-  const v = document.getElementById('agentNameInput').value.trim();
-  if (!v) { alert('Please enter your name.'); return; }
-  agentName = v;
-  const badge = document.getElementById('agentBadge');
-  badge.textContent = v.split(' ')[0];
-  badge.classList.add('set');
-  loadDatabase();
-  showScreen('screen-gps');
-}
-function changeAgent() { showScreen('screen-name'); }
-document.getElementById('agentNameInput').addEventListener('keydown', e => { if (e.key==='Enter') setAgentName(); });
-
+// ── GPS ───────────────────────────────────────────────────────────────────────
 function getLocation() {
-  const btn = document.getElementById('gpsBtn');
+  const btn  = document.getElementById('gpsBtn');
   const icon = document.getElementById('gpsIcon');
   const stat = document.getElementById('gpsStatus');
   document.getElementById('gpsError').style.display = 'none';
   btn.disabled = true; btn.textContent = 'Detecting…';
   icon.classList.add('pulsing'); stat.textContent = 'Getting your location…';
-  if (!navigator.geolocation) { alert('Geolocation not supported on this browser.'); return; }
+  if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
   navigator.geolocation.getCurrentPosition(pos => {
     userLat = pos.coords.latitude; userLon = pos.coords.longitude;
     icon.classList.remove('pulsing'); icon.textContent = '✅';
@@ -258,6 +478,7 @@ function getLocation() {
   }, { enableHighAccuracy: true, timeout: 15000 });
 }
 
+// ── SEARCH ────────────────────────────────────────────────────────────────────
 async function searchNearby() {
   showScreen('screen-results');
   selectedSociety = null;
@@ -267,7 +488,7 @@ async function searchNearby() {
   content.innerHTML = '<div class="loading"><div class="spinner"></div> Searching 10,636 societies…</div>';
   if (!dbLoaded) await loadDatabase();
   if (!database.length) {
-    content.innerHTML = '<div class="error-msg">Could not load database. Check your internet connection and try again.</div>';
+    content.innerHTML = '<div class="error-msg" style="display:block">Could not load database. Check your internet connection.</div>';
     return;
   }
   const nearby = database
@@ -280,13 +501,13 @@ async function searchNearby() {
 function renderResults(nearby) {
   const content = document.getElementById('resultsContent');
   if (nearby.length === 0) {
-    content.innerHTML = `<div class="info-box">No societies found within ${RADIUS_M}m of your location. This looks like a new entry — please add it below.</div>`;
+    content.innerHTML = `<div class="info-box">📭 No societies found within ${RADIUS_M}m. This looks like a new entry — please add it below.</div>`;
     document.getElementById('newSocietyForm').style.display = 'block';
     return;
   }
   content.innerHTML = `
     <div class="results-header">
-      <span class="pill pill-match">MATCHES FOUND</span>
+      <span class="pill pill-match">Matches Found</span>
       <span class="pill pill-count">${nearby.length} within ${RADIUS_M}m</span>
     </div>
     <p class="sub" style="margin-bottom:16px">Tap the society you are standing at.</p>
@@ -294,10 +515,7 @@ function renderResults(nearby) {
       <div class="society-card" id="card-${i}" onclick="selectSociety(${i})">
         <div class="s-dist">${Math.round(s.dist)}m</div>
         <div class="s-name">${s.name}</div>
-        <div class="s-meta">
-          <span>📍 Sector ${s.sector}</span>
-          ${s.score ? `<span>⭐ ${parseFloat(s.score).toFixed(2)}</span>` : ''}
-        </div>
+        <div class="s-meta"><span>📍 Sector ${s.sector}</span>${s.score ? `<span>⭐ ${parseFloat(s.score).toFixed(2)}</span>` : ''}</div>
         <div class="s-tier">${s.tier}</div>
       </div>
     `).join('')}
@@ -323,6 +541,7 @@ function showNewForm() {
   document.getElementById('newSocietyForm').scrollIntoView({ behavior: 'smooth' });
 }
 
+// ── SUBMIT ────────────────────────────────────────────────────────────────────
 async function postToSheet(payload) {
   await fetch(APPS_SCRIPT_URL, {
     method: 'POST', mode: 'no-cors',
@@ -385,6 +604,19 @@ function scanAnother() {
   btn.textContent = '📍 Get My Location'; btn.onclick = getLocation; btn.disabled = false;
   showScreen('screen-gps');
 }
+
+// ── ENTER KEY SUPPORT ─────────────────────────────────────────────────────────
+document.getElementById('loginPassword').addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
+document.getElementById('loginUsername').addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
+
+// ── AUTO LOGIN IF SESSION VALID ───────────────────────────────────────────────
+window.addEventListener('load', () => {
+  const session = loadSession();
+  if (session) {
+    agentName = session.name;
+    onLoggedIn();
+  }
+});
 </script>
 </body>
 </html>
