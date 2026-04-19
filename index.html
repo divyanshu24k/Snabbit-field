@@ -4,71 +4,252 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Snabbit Field Agent</title>
+<!--
+  ============================================================
+  SNABBIT FIELD AGENT APP
+  ============================================================
+  VERSION     : 3.0
+  LAST UPDATED: 2026
+
+  FEATURES:
+    1. Login with credentials from Google Sheet (24hr session)
+    2. Change Password
+    3. Role-based access control per agent:
+       - Society Access (Add Society feature)
+       - Blast Access   (WhatsApp Blast feature)
+    4. Add Society — GPS-based society search & submission
+    5. WhatsApp Blast — generates unique tracking link per agent
+
+  CREDENTIALS SHEET COLUMNS:
+    S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access
+
+  GOOGLE SHEETS:
+    DB_SHEET_ID      — 10,636 Gurgaon society database (read)
+    CREDS_SHEET_ID   — Agent credentials (read + password update)
+    SUBMIT_SHEET_ID  — Society visit submissions (write)
+    BLAST_SHEET_ID   — WhatsApp blast tracking log (write)
+
+  APPS SCRIPT:
+    APPS_SCRIPT_URL  — Handles all POST operations:
+                       • submitSociety
+                       • changePassword
+                       • logBlast
+
+  TRACKING LINK FORMAT:
+    https://snabbit.app/download?ref=AGENTCODE&soc=SNABBIT
+    - AGENTCODE : Column 5 (Agent Code) from credentials sheet
+    - soc       : Fixed as "SNABBIT" during pilot phase
+
+  MESSAGE TEMPLATE:
+    Defined in WHATSAPP_TEMPLATE constant below.
+    Placeholders: {{SOCIETY}}, {{LINK}}, {{AGENT_NAME}}
+    Update the string to change the message for all agents instantly.
+
+  HOW TO UPDATE THE APP:
+    1. Edit index.html in GitHub (pencil icon)
+    2. Vercel auto-deploys within 30 seconds
+    3. All agents get the update on next page load
+
+  DEVELOPER NOTES:
+    - No framework — vanilla HTML/CSS/JS for simplicity & portability
+    - All Google Sheet reads use the public gviz CSV endpoint
+    - All writes go through the Apps Script POST endpoint (no-cors)
+    - Session stored in localStorage (expires after SESSION_HOURS)
+    - Access flags (blastAccess, societyAccess) stored in session
+    - Disabled feature cards show a locked state with an error message
+    - Society dropdown is deduplicated and client-side searchable
+  ============================================================
+-->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
-  :root {
-    --bg: #FDE8F0; --surface: #FFFFFF; --surface2: #FEF0F6; --border: #F9C0D8;
-    --accent: #FF1F7D; --accent-light: #FF4D96; --accent-dark: #D4006A;
-    --navy: #1E1B4B; --navy2: #2D2A5E; --text: #1E1B4B; --muted: #9090A0;
-    --success: #00C48C; --error: #FF3B5C; --radius: 16px;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Nunito', sans-serif; min-height: 100vh; max-width: 480px; margin: 0 auto; padding: 0 0 80px 0; }
 
-  /* ── HEADER ── */
-  .header { background: var(--surface); padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(255,31,125,0.1); border-bottom: 2px solid var(--border); }
-  .logo { font-size: 22px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; }
+  /* ── DESIGN TOKENS ─────────────────────────────────────── */
+  :root {
+    --bg:           #FDE8F0;
+    --surface:      #FFFFFF;
+    --surface2:     #FEF0F6;
+    --border:       #F9C0D8;
+    --accent:       #FF1F7D;
+    --accent-light: #FF4D96;
+    --accent-dark:  #D4006A;
+    --navy:         #1E1B4B;
+    --navy2:        #2D2A5E;
+    --text:         #1E1B4B;
+    --muted:        #9090A0;
+    --success:      #00C48C;
+    --error:        #FF3B5C;
+    --locked:       #D0D0D8;
+    --radius:       16px;
+  }
+
+  /* ── RESET ─────────────────────────────────────────────── */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Nunito', sans-serif;
+    min-height: 100vh;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 0 0 80px 0;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────────── */
+  .header {
+    background: var(--surface);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 12px rgba(255,31,125,0.1);
+    border-bottom: 2px solid var(--border);
+  }
+  .logo { font-size: 22px; font-weight: 800; color: var(--accent); }
   .logo-sub { color: var(--muted); font-size: 13px; font-weight: 600; margin-left: 6px; }
-  .agent-badge { background: var(--navy); border-radius: 20px; padding: 7px 14px; font-size: 13px; font-weight: 700; color: #fff; cursor: pointer; transition: all 0.2s; display:none; }
+  .agent-badge {
+    background: var(--navy);
+    border-radius: 20px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #fff;
+    cursor: pointer;
+    display: none;
+    transition: background 0.2s;
+  }
   .agent-badge:hover { background: var(--navy2); }
 
-  /* ── SCREENS ── */
+  /* ── SCREENS ─────────────────────────────────────────────── */
   .screen { display: none; padding: 28px 20px; animation: fadeUp 0.3s ease; }
   .screen.active { display: block; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 
-  /* ── STEP INDICATOR ── */
+  /* ── STEP INDICATOR ─────────────────────────────────────── */
   .step-indicator { display: flex; gap: 6px; margin-bottom: 28px; }
   .step-dot { height: 5px; flex: 1; border-radius: 3px; background: var(--border); transition: background 0.3s; }
-  .step-dot.done { background: var(--accent); }
+  .step-dot.done   { background: var(--accent); }
   .step-dot.active { background: var(--accent-light); }
 
-  /* ── TYPOGRAPHY ── */
+  /* ── TYPOGRAPHY ─────────────────────────────────────────── */
   .big-label { font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
   .big-title { font-size: 26px; font-weight: 800; line-height: 1.2; margin-bottom: 6px; color: var(--navy); }
   .sub { color: var(--muted); font-size: 14px; margin-bottom: 28px; line-height: 1.6; font-weight: 500; }
 
-  /* ── INPUTS ── */
+  /* ── FORM INPUTS ─────────────────────────────────────────── */
   .input-wrap { margin-bottom: 14px; position: relative; }
   .input-wrap label { display: block; font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
-  .input-wrap input, .input-wrap textarea { width: 100%; background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius); padding: 15px 18px; color: var(--text); font-family: 'Nunito', sans-serif; font-size: 15px; font-weight: 600; outline: none; transition: border-color 0.2s, box-shadow 0.2s; -webkit-appearance: none; }
-  .input-wrap input:focus, .input-wrap textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,31,125,0.1); }
-  .input-wrap input::placeholder, .input-wrap textarea::placeholder { color: var(--muted); font-weight: 500; }
+  .input-wrap input,
+  .input-wrap textarea,
+  .input-wrap select {
+    width: 100%;
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 15px 18px;
+    color: var(--text);
+    font-family: 'Nunito', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    -webkit-appearance: none;
+  }
+  .input-wrap input:focus,
+  .input-wrap textarea:focus,
+  .input-wrap select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,31,125,0.1); }
+  .input-wrap input::placeholder,
+  .input-wrap textarea::placeholder { color: var(--muted); font-weight: 500; }
   .input-wrap textarea { resize: none; height: 80px; }
   .pw-toggle { position: absolute; right: 16px; bottom: 16px; cursor: pointer; font-size: 16px; color: var(--muted); user-select: none; }
 
-  /* ── BUTTONS ── */
+  /* ── BUTTONS ─────────────────────────────────────────────── */
   .btn { width: 100%; padding: 16px; border-radius: var(--radius); border: none; font-family: 'Nunito', sans-serif; font-size: 16px; font-weight: 800; cursor: pointer; transition: all 0.2s; }
   .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 16px rgba(255,31,125,0.35); }
-  .btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
-  .btn-primary:active { transform: translateY(0); }
+  .btn-primary:hover   { background: var(--accent-dark); transform: translateY(-1px); }
+  .btn-primary:active  { transform: translateY(0); }
   .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; box-shadow: none; }
   .btn-secondary { background: var(--surface); color: var(--navy); border: 2px solid var(--border); margin-top: 12px; }
   .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-whatsapp { background: #25D366; color: #fff; box-shadow: 0 4px 16px rgba(37,211,102,0.35); }
+  .btn-whatsapp:hover { background: #1EB358; transform: translateY(-1px); }
   .btn-link { background: none; border: none; color: var(--accent); font-family: 'Nunito', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; padding: 8px 0; text-decoration: underline; }
 
-  /* ── MESSAGES ── */
+  /* ── MESSAGES ─────────────────────────────────────────────── */
   .error-msg { background: #FFF0F5; border: 1.5px solid rgba(255,31,125,0.3); color: var(--error); border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
   .success-msg { background: rgba(0,196,140,0.08); border: 1.5px solid rgba(0,196,140,0.3); color: #00966A; border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
   .info-box { background: var(--surface2); border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 14px; font-weight: 600; color: var(--navy2); margin-bottom: 20px; line-height: 1.6; }
 
-  /* ── LOGIN CARD ── */
+  /* ── LOGIN PAGE ──────────────────────────────────────────── */
   .login-hero { text-align: center; padding: 32px 20px 20px; }
   .login-logo-big { font-size: 36px; font-weight: 800; color: var(--accent); letter-spacing: -1px; margin-bottom: 4px; }
   .login-tagline { font-size: 13px; color: var(--muted); font-weight: 600; }
   .login-card { background: var(--surface); border: 2px solid var(--border); border-radius: 24px; padding: 28px 24px; margin: 0 20px; box-shadow: 0 4px 24px rgba(255,31,125,0.08); }
 
-  /* ── GPS CARD ── */
+  /* ── HOME SCREEN ─────────────────────────────────────────── */
+  .home-greeting { background: var(--accent); border-radius: 20px; padding: 24px; margin-bottom: 24px; color: #fff; }
+  .home-greeting-label { font-size: 13px; font-weight: 600; opacity: 0.8; margin-bottom: 4px; }
+  .home-greeting-name  { font-size: 22px; font-weight: 800; }
+  .home-greeting-sub   { font-size: 13px; opacity: 0.75; margin-top: 4px; font-weight: 500; }
+  .home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+
+  /* ── HOME CARDS — Active & Locked states ─────────────────── */
+  .home-card {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 20px;
+    padding: 22px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 12px rgba(255,31,125,0.06);
+    position: relative;
+  }
+  .home-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,31,125,0.12); }
+  .home-card-icon  { font-size: 32px; margin-bottom: 10px; }
+  .home-card-title { font-size: 15px; font-weight: 800; color: var(--navy); margin-bottom: 4px; }
+  .home-card-sub   { font-size: 12px; color: var(--muted); font-weight: 500; line-height: 1.4; }
+
+  /* Locked card — shown when agent lacks access */
+  .home-card.locked {
+    background: #F5F5F8;
+    border-color: var(--locked);
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+  .home-card.locked:hover { border-color: var(--locked); transform: none; box-shadow: none; }
+  .home-card.locked .home-card-title { color: var(--muted); }
+  .lock-badge {
+    position: absolute;
+    top: 10px; right: 10px;
+    font-size: 14px;
+  }
+
+  .home-logout { text-align: center; margin-top: 8px; }
+
+  /* ── ACCESS DENIED SCREEN ─────────────────────────────────── */
+  .access-denied-card {
+    background: var(--surface);
+    border: 2px solid var(--locked);
+    border-radius: 24px;
+    padding: 40px 24px;
+    text-align: center;
+    margin-bottom: 20px;
+  }
+  .access-denied-icon {
+    width: 76px; height: 76px;
+    background: #F0F0F5;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 18px; font-size: 32px;
+  }
+
+  /* ── GPS CARD ─────────────────────────────────────────────── */
   .gps-card { background: var(--surface); border: 2px solid var(--border); border-radius: 24px; padding: 36px 24px; text-align: center; margin-bottom: 20px; box-shadow: 0 2px 16px rgba(255,31,125,0.07); }
   .gps-icon { width: 76px; height: 76px; background: linear-gradient(135deg, var(--accent), #FF6EB0); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; font-size: 32px; box-shadow: 0 6px 20px rgba(255,31,125,0.35); }
   .gps-icon.pulsing { animation: pulse 1.5s infinite; }
@@ -76,33 +257,42 @@
   .gps-status { font-size: 15px; font-weight: 700; color: var(--navy); }
   .coord-display { font-size: 12px; font-weight: 700; color: var(--accent); margin-top: 12px; background: var(--surface2); padding: 10px 16px; border-radius: 10px; border: 1px solid var(--border); }
 
-  /* ── SOCIETY CARDS ── */
+  /* ── SOCIETY CARDS ───────────────────────────────────────── */
   .results-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
   .pill { font-size: 11px; font-weight: 800; padding: 5px 12px; border-radius: 20px; letter-spacing: 0.5px; text-transform: uppercase; }
   .pill-match { background: rgba(255,31,125,0.1); color: var(--accent); border: 1.5px solid rgba(255,31,125,0.25); }
   .pill-count { background: var(--surface); color: var(--muted); border: 1.5px solid var(--border); }
   .society-card { background: var(--surface); border: 2px solid var(--border); border-radius: 20px; padding: 16px 18px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; position: relative; box-shadow: 0 1px 8px rgba(0,0,0,0.04); }
-  .society-card:hover { border-color: var(--accent-light); transform: translateY(-1px); }
+  .society-card:hover    { border-color: var(--accent-light); transform: translateY(-1px); }
   .society-card.selected { border-color: var(--accent); background: #FFF0F6; }
   .s-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; padding-right: 52px; color: var(--navy); }
   .s-meta { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; font-weight: 600; }
   .s-dist { position: absolute; top: 14px; right: 14px; font-size: 11px; font-weight: 800; color: var(--accent); background: rgba(255,31,125,0.1); padding: 3px 9px; border-radius: 8px; }
   .s-tier { display: inline-block; font-size: 10px; font-weight: 700; background: var(--navy); color: #fff; border-radius: 6px; padding: 2px 8px; margin-top: 6px; }
 
-  /* ── DIVIDER ── */
+  /* ── WHATSAPP BLAST ──────────────────────────────────────── */
+  .blast-preview { background: var(--surface); border: 2px solid var(--border); border-radius: 20px; padding: 20px; margin-bottom: 16px; font-size: 14px; line-height: 1.8; font-weight: 600; color: var(--navy); white-space: pre-wrap; word-break: break-word; }
+  .blast-meta { background: var(--surface2); border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 16px; }
+  .blast-meta-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .blast-meta-row:last-child { border-bottom: none; }
+  .blast-meta-row span:first-child { color: var(--muted); font-weight: 600; }
+  .blast-meta-row span:last-child  { font-weight: 700; color: var(--navy); word-break: break-all; max-width: 60%; text-align: right; }
+  .blast-link { color: var(--accent); }
+
+  /* ── DIVIDER ─────────────────────────────────────────────── */
   .divider { display: flex; align-items: center; gap: 12px; margin: 24px 0; color: var(--muted); font-size: 12px; font-weight: 700; }
   .divider::before, .divider::after { content: ''; flex: 1; height: 1.5px; background: var(--border); }
 
-  /* ── SUCCESS ── */
+  /* ── SUCCESS SCREENS ─────────────────────────────────────── */
   .success-card { background: var(--surface); border: 2px solid var(--success); border-radius: 24px; padding: 40px 24px; text-align: center; margin-bottom: 20px; }
   .success-icon { width: 76px; height: 76px; background: linear-gradient(135deg, var(--success), #00E5A0); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 18px; font-size: 32px; }
   .success-detail { background: var(--bg); border-radius: 14px; padding: 16px; margin-top: 20px; text-align: left; border: 1.5px solid var(--border); }
   .detail-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
   .detail-row:last-child { border-bottom: none; }
   .detail-row span:first-child { color: var(--muted); font-weight: 600; }
-  .detail-row span:last-child { font-weight: 700; color: var(--navy); font-size: 13px; max-width: 60%; text-align: right; word-break: break-word; }
+  .detail-row span:last-child  { font-weight: 700; color: var(--navy); font-size: 13px; max-width: 60%; text-align: right; word-break: break-word; }
 
-  /* ── LOADING ── */
+  /* ── LOADING ─────────────────────────────────────────────── */
   .loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 24px; color: var(--muted); font-size: 14px; font-weight: 600; }
   .spinner { width: 20px; height: 20px; border: 2.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -110,12 +300,18 @@
 </head>
 <body>
 
+<!-- ════════════════════════════════════════════════════════
+     HEADER
+════════════════════════════════════════════════════════ -->
 <div class="header">
   <div class="logo">Snabbit <span class="logo-sub">field</span></div>
   <div class="agent-badge" id="agentBadge" onclick="logout()">Logout</div>
 </div>
 
-<!-- ── SCREEN: LOGIN ── -->
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 1 — LOGIN
+════════════════════════════════════════════════════════ -->
 <div class="screen active" id="screen-login">
   <div class="login-hero">
     <div class="login-logo-big">Snabbit</div>
@@ -140,12 +336,15 @@
   </div>
 </div>
 
-<!-- ── SCREEN: CHANGE PASSWORD ── -->
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 2 — CHANGE PASSWORD
+════════════════════════════════════════════════════════ -->
 <div class="screen" id="screen-changepass">
   <div class="big-label">Account</div>
   <div class="big-title">Change Password</div>
   <p class="sub">Enter your username and current password, then set a new one.</p>
-  <div id="cpError" class="error-msg"></div>
+  <div id="cpError"   class="error-msg"></div>
   <div id="cpSuccess" class="success-msg"></div>
   <div class="input-wrap">
     <label>Username</label>
@@ -170,12 +369,50 @@
   <button class="btn btn-secondary" onclick="showScreen('screen-login')">← Back to Login</button>
 </div>
 
-<!-- ── SCREEN: GPS ── -->
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 3 — HOME
+     Cards are rendered dynamically based on agent access flags
+════════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-home">
+  <div class="home-greeting">
+    <div class="home-greeting-label">Welcome back 👋</div>
+    <div class="home-greeting-name" id="homeAgentName">Agent</div>
+    <div class="home-greeting-sub">What would you like to do today?</div>
+  </div>
+  <div class="home-grid" id="homeGrid">
+    <!-- Cards injected by renderHomeCards() after login -->
+  </div>
+  <div class="home-logout">
+    <button class="btn-link" onclick="logout()">Sign out</button>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 4 — ACCESS DENIED
+     Shown when agent taps a locked feature card
+════════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-access-denied">
+  <div class="access-denied-card">
+    <div class="access-denied-icon">🔒</div>
+    <div class="big-title" style="font-size:22px">Access Restricted</div>
+    <p style="color:var(--muted);font-size:14px;margin-top:10px;font-weight:600;line-height:1.6">
+      You don't have access to this feature.<br>Please contact your admin to enable it.
+    </p>
+  </div>
+  <button class="btn btn-secondary" onclick="showScreen('screen-home')">← Back to Home</button>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 5 — GPS (Add Society Step 1)
+════════════════════════════════════════════════════════ -->
 <div class="screen" id="screen-gps">
   <div class="step-indicator">
     <div class="step-dot active"></div><div class="step-dot"></div>
   </div>
-  <div class="big-label">Step 1 of 2</div>
+  <div class="big-label">Add Society — Step 1 of 2</div>
   <div class="big-title">Where are you?</div>
   <p class="sub">Stand at the main gate of the society, then tap to capture your location.</p>
   <div class="gps-card">
@@ -183,16 +420,20 @@
     <div class="gps-status" id="gpsStatus">Ready to detect location</div>
     <div id="coordDisplay" class="coord-display" style="display:none"></div>
   </div>
-  <div id="gpsError" class="error-msg" style="display:block"></div>
+  <div id="gpsError" class="error-msg"></div>
   <button class="btn btn-primary" id="gpsBtn" onclick="getLocation()">📍 Get My Location</button>
+  <button class="btn btn-secondary" onclick="showScreen('screen-home')">← Back to Home</button>
 </div>
 
-<!-- ── SCREEN: RESULTS ── -->
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 6 — RESULTS (Add Society Step 2)
+════════════════════════════════════════════════════════ -->
 <div class="screen" id="screen-results">
   <div class="step-indicator">
     <div class="step-dot done"></div><div class="step-dot active"></div>
   </div>
-  <div class="big-label">Step 2 of 2</div>
+  <div class="big-label">Add Society — Step 2 of 2</div>
   <div class="big-title">Nearby Societies</div>
   <div id="resultsContent"></div>
   <div id="confirmMatchForm" style="display:none">
@@ -219,7 +460,52 @@
   <button class="btn btn-secondary" style="margin-top:8px" onclick="showScreen('screen-gps')">← Rescan Location</button>
 </div>
 
-<!-- ── SCREEN: SUCCESS ── -->
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 7 — WHATSAPP BLAST
+════════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-blast">
+  <div class="big-label">WhatsApp Blast</div>
+  <div class="big-title">Send Your Link</div>
+  <p class="sub">Select the society you are working at. Your unique tracking link will be generated automatically.</p>
+  <div id="blastError" class="error-msg"></div>
+  <div class="input-wrap">
+    <label>Search Society</label>
+    <input type="text" id="blastSearch" placeholder="Type to search societies…" oninput="filterBlastSocieties()" />
+  </div>
+  <div class="input-wrap">
+    <label>Select Society</label>
+    <select id="blastSocietySelect">
+      <option value="">— Select a society —</option>
+    </select>
+  </div>
+  <button class="btn btn-primary" id="generateBtn" onclick="generateBlast()">Generate Message →</button>
+  <button class="btn btn-secondary" onclick="showScreen('screen-home')">← Back to Home</button>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 8 — BLAST PREVIEW
+════════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-blast-preview">
+  <div class="big-label">WhatsApp Blast</div>
+  <div class="big-title">Your Message</div>
+  <p class="sub">Review your message below, then tap Send to open WhatsApp.</p>
+  <div class="blast-meta">
+    <div class="blast-meta-row"><span>Agent</span><span id="previewAgentName">—</span></div>
+    <div class="blast-meta-row"><span>Agent Code</span><span id="previewAgentCode">—</span></div>
+    <div class="blast-meta-row"><span>Society</span><span id="previewSociety">—</span></div>
+    <div class="blast-meta-row"><span>Tracking Link</span><span id="previewLink" class="blast-link">—</span></div>
+  </div>
+  <div class="blast-preview" id="blastMessagePreview"></div>
+  <button class="btn btn-whatsapp" onclick="sendWhatsApp()">📲 Send via WhatsApp</button>
+  <button class="btn btn-secondary" onclick="showScreen('screen-blast')">← Change Society</button>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 9 — SOCIETY SUBMISSION SUCCESS
+════════════════════════════════════════════════════════ -->
 <div class="screen" id="screen-success">
   <div class="success-card">
     <div class="success-icon">✓</div>
@@ -228,25 +514,98 @@
     <div class="success-detail" id="successDetail"></div>
   </div>
   <button class="btn btn-primary" onclick="scanAnother()">Scan Another Society</button>
+  <button class="btn btn-secondary" onclick="showScreen('screen-home')">← Back to Home</button>
 </div>
 
+
+<!-- ════════════════════════════════════════════════════════
+     SCREEN 10 — BLAST SENT SUCCESS
+════════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-blast-success">
+  <div class="success-card">
+    <div class="success-icon">📲</div>
+    <div class="big-title" style="font-size:24px">Blast Sent!</div>
+    <p style="color:var(--muted);font-size:14px;margin-top:8px;font-weight:600;">Your message has been logged.</p>
+    <div class="success-detail" id="blastSuccessDetail"></div>
+  </div>
+  <button class="btn btn-primary" onclick="showScreen('screen-blast')">Send to Another Society</button>
+  <button class="btn btn-secondary" onclick="showScreen('screen-home')">← Back to Home</button>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════════════ -->
 <script>
-// ── CONFIG ────────────────────────────────────────────────────────────────────
-const APPS_SCRIPT_URL  = 'https://script.google.com/macros/s/AKfycby4h5mCtaqa4HNlgN77fwqwgQfP_31ZBGdGMKr9C6bkzCD1UU5dFWvUk7wO5uVXdc10Bw/exec';
-const DB_SHEET_ID      = '1ZWfPa95bOhDnEhxTVahru6BpUsTijl9Po8vL2jpVK0A';
-const CREDS_SHEET_ID   = '1Q4GpTRZMj2bGg025n6cMNrIkm1D6XJBqOr-bm2J8qCY';
-const RADIUS_M         = 150;
-const SESSION_HOURS    = 24;
 
-// ── STATE ─────────────────────────────────────────────────────────────────────
-let agentName = '', userLat = null, userLon = null;
-let database  = [], dbLoaded = false, selectedSociety = null;
-let agentRow  = null; // row index in creds sheet for password update
+// ─────────────────────────────────────────────────────────
+// CONFIG — update these values when sheets or scripts change
+// ─────────────────────────────────────────────────────────
+const CONFIG = {
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycby4h5mCtaqa4HNlgN77fwqwgQfP_31ZBGdGMKr9C6bkzCD1UU5dFWvUk7wO5uVXdc10Bw/exec',
+  DB_SHEET_ID:     '1ZWfPa95bOhDnEhxTVahru6BpUsTijl9Po8vL2jpVK0A',
+  CREDS_SHEET_ID:  '1Q4GpTRZMj2bGg025n6cMNrIkm1D6XJBqOr-bm2J8qCY',
+  SUBMIT_SHEET_ID: '1GvCUiO1QclTwu7uwbkRVeswIxhpKPqdzVttir_CnSQU',
+  BLAST_SHEET_ID:  '1xMXKkS27fIfzMyMmUFdMiw99UQM6ZYZlcPHETwnPCVs',
+  RADIUS_M:        150,
+  SESSION_HOURS:   24,
+  SOCIETY_CODE:    'SNABBIT',   // Fixed during pilot — change per-society later
+  TRACKING_BASE:   'https://snabbit.app/download',
+};
 
-// ── SESSION MANAGEMENT ────────────────────────────────────────────────────────
-function saveSession(username, name) {
-  const expiry = Date.now() + SESSION_HOURS * 60 * 60 * 1000;
-  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, expiry }));
+// ─────────────────────────────────────────────────────────
+// WHATSAPP MESSAGE TEMPLATE
+// Placeholders replaced at runtime:
+//   {{SOCIETY}}    → society name selected by agent
+//   {{LINK}}       → unique tracking link for this agent
+//   {{AGENT_NAME}} → agent's full name from credentials sheet
+// To update the message: edit this string and redeploy.
+// ─────────────────────────────────────────────────────────
+const WHATSAPP_TEMPLATE = `Hi neighbour!
+
+We are organising exciting activities and exclusive benefits for residents of {{SOCIETY}}.
+
+Join Snabbit — your community app for home services, events, and neighbourhood offers.
+
+Register here in 60 seconds:
+👉 {{LINK}}
+
+See you there!
+{{AGENT_NAME}}
+Snabbit Community Team`;
+
+
+// ─────────────────────────────────────────────────────────
+// APP STATE
+// ─────────────────────────────────────────────────────────
+let state = {
+  agentName:      '',
+  agentCode:      '',
+  // Access flags — read from credentials sheet on login
+  // TRUE  = feature is enabled for this agent
+  // FALSE = feature is locked, access denied screen shown
+  blastAccess:    false,
+  societyAccess:  false,
+  userLat:        null,
+  userLon:        null,
+  database:       [],
+  dbLoaded:       false,
+  allSocieties:   [],
+  selectedSociety: null,
+  blastSociety:   '',
+};
+
+
+// ─────────────────────────────────────────────────────────
+// SESSION MANAGEMENT
+// Access flags are stored in session so the app doesn't
+// need to re-fetch credentials on every page load.
+// ─────────────────────────────────────────────────────────
+function saveSession(username, name, agentCode, blastAccess, societyAccess) {
+  const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
+  localStorage.setItem('snabbit_session', JSON.stringify({
+    username, name, agentCode, blastAccess, societyAccess, expiry
+  }));
 }
 function loadSession() {
   try {
@@ -259,182 +618,41 @@ function clearSession() {
   localStorage.removeItem('snabbit_session');
 }
 
-// ── NAVIGATION ────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────
+// NAVIGATION
+// ─────────────────────────────────────────────────────────
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0, 0);
 }
 
-// ── PASSWORD TOGGLE ───────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────────────────
 function togglePw(inputId, icon) {
-  const input = document.getElementById(inputId);
-  if (input.type === 'password') { input.type = 'text'; icon.textContent = '🙈'; }
-  else { input.type = 'password'; icon.textContent = '👁'; }
+  const input  = document.getElementById(inputId);
+  input.type   = input.type === 'password' ? 'text' : 'password';
+  icon.textContent = input.type === 'password' ? '👁' : '🙈';
 }
 
-// ── LOAD CREDENTIALS SHEET ────────────────────────────────────────────────────
-async function loadCreds() {
-  const url = `https://docs.google.com/spreadsheets/d/${CREDS_SHEET_ID}/gviz/tq?tqx=out:csv`;
-  const res  = await fetch(url);
-  const text = await res.text();
-  const rows = parseCSV(text);
-  // Find header row
-  const headerIdx = rows.findIndex(r =>
-    r.some(c => c.toLowerCase().includes('username'))
-  );
-  if (headerIdx === -1) throw new Error('Header not found');
-  const h       = rows[headerIdx].map(c => c.toLowerCase().trim());
-  const uIdx    = h.findIndex(c => c.includes('username'));
-  const pIdx    = h.findIndex(c => c.includes('password'));
-  const nIdx    = h.findIndex(c => c.includes('agent name') || c.includes('name'));
-  const aIdx    = h.findIndex(c => c.includes('active'));
-  return { rows, headerIdx, uIdx, pIdx, nIdx, aIdx };
+function showError(elId, msg) {
+  const el = document.getElementById(elId);
+  el.textContent = msg; el.style.display = 'block';
 }
-
-// ── LOGIN ─────────────────────────────────────────────────────────────────────
-async function doLogin() {
-  const username = document.getElementById('loginUsername').value.trim();
-  const password = document.getElementById('loginPassword').value.trim();
-  const errEl    = document.getElementById('loginError');
-  const btn      = document.getElementById('loginBtn');
-
-  errEl.style.display = 'none';
-  if (!username || !password) { showError(errEl, 'Please enter your username and password.'); return; }
-
-  btn.disabled = true; btn.textContent = 'Signing in…';
-
-  try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, aIdx } = await loadCreds();
-    const dataRows = rows.slice(headerIdx + 1);
-    const match = dataRows.find(r =>
-      r[uIdx]?.toLowerCase().trim() === username.toLowerCase() &&
-      r[pIdx]?.trim() === password &&
-      r[aIdx]?.toLowerCase().trim() === 'true'
-    );
-
-    if (!match) {
-      showError(errEl, 'Invalid username or password. Please try again.');
-      btn.disabled = false; btn.textContent = 'Sign In →';
-      return;
-    }
-
-    agentName = match[nIdx] || username;
-    saveSession(username, agentName);
-    onLoggedIn();
-
-  } catch(e) {
-    showError(errEl, 'Could not reach credentials server. Check your internet connection.');
-    btn.disabled = false; btn.textContent = 'Sign In →';
-  }
-}
-
-function onLoggedIn() {
-  const badge = document.getElementById('agentBadge');
-  badge.style.display = 'block';
-  badge.textContent   = agentName.split(' ')[0] + ' · Logout';
-  document.getElementById('loginBtn').disabled = false;
-  document.getElementById('loginBtn').textContent = 'Sign In →';
-  document.getElementById('loginUsername').value  = '';
-  document.getElementById('loginPassword').value  = '';
-  loadDatabase();
-  showScreen('screen-gps');
-}
-
-function logout() {
-  clearSession();
-  agentName = ''; userLat = null; userLon = null;
-  document.getElementById('agentBadge').style.display = 'none';
-  showScreen('screen-login');
-}
-
-// ── CHANGE PASSWORD ───────────────────────────────────────────────────────────
-async function doChangePassword() {
-  const username   = document.getElementById('cpUsername').value.trim();
-  const oldPw      = document.getElementById('cpOldPassword').value.trim();
-  const newPw      = document.getElementById('cpNewPassword').value.trim();
-  const confirmPw  = document.getElementById('cpConfirmPassword').value.trim();
-  const errEl      = document.getElementById('cpError');
-  const sucEl      = document.getElementById('cpSuccess');
-  const btn        = document.getElementById('cpBtn');
-
-  errEl.style.display = 'none'; sucEl.style.display = 'none';
-
-  if (!username || !oldPw || !newPw || !confirmPw) { showError(errEl, 'Please fill in all fields.'); return; }
-  if (newPw.length < 6) { showError(errEl, 'New password must be at least 6 characters.'); return; }
-  if (newPw !== confirmPw) { showError(errEl, 'New passwords do not match.'); return; }
-
-  btn.disabled = true; btn.textContent = 'Updating…';
-
-  try {
-    const { rows, headerIdx, uIdx, pIdx, aIdx } = await loadCreds();
-    const dataRows = rows.slice(headerIdx + 1);
-    const rowIdx   = dataRows.findIndex(r =>
-      r[uIdx]?.toLowerCase().trim() === username.toLowerCase() &&
-      r[pIdx]?.trim() === oldPw &&
-      r[aIdx]?.toLowerCase().trim() === 'true'
-    );
-
-    if (rowIdx === -1) { showError(errEl, 'Username or current password is incorrect.'); btn.disabled = false; btn.textContent = 'Update Password'; return; }
-
-    // Send update to Apps Script
-    await fetch(APPS_SCRIPT_URL, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'changePassword',
-        username: username,
-        newPassword: newPw,
-        sheetId: CREDS_SHEET_ID
-      })
-    });
-
-    sucEl.textContent = 'Password updated successfully! Please login with your new password.';
-    sucEl.style.display = 'block';
-    ['cpUsername','cpOldPassword','cpNewPassword','cpConfirmPassword'].forEach(id => document.getElementById(id).value = '');
-    btn.disabled = false; btn.textContent = 'Update Password';
-
-  } catch(e) {
-    showError(errEl, 'Could not update password. Check your internet connection.');
-    btn.disabled = false; btn.textContent = 'Update Password';
-  }
-}
-
-function showError(el, msg) { el.textContent = msg; el.style.display = 'block'; }
-
-// ── DATABASE ──────────────────────────────────────────────────────────────────
-async function loadDatabase() {
-  if (dbLoaded) return;
-  const url = `https://docs.google.com/spreadsheets/d/${DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Clean+Residential+DB`;
-  try {
-    const res = await fetch(url);
-    const text = await res.text();
-    const rows = parseCSV(text);
-    const headerIdx = rows.findIndex(r => r.includes('Name') && r.includes('Latitude'));
-    if (headerIdx === -1) return;
-    const h = rows[headerIdx];
-    const col = k => h.indexOf(k);
-    database = rows.slice(headerIdx + 1)
-      .filter(r => r[col('Latitude')] && !isNaN(parseFloat(r[col('Latitude')])))
-      .map(r => ({
-        name:   r[col('Name')]          || '',
-        lat:    parseFloat(r[col('Latitude')]),
-        lon:    parseFloat(r[col('Longitude')]),
-        tier:   r[col('Snabbit Tier')]  || '',
-        sector: r[col('Sector')]        || '',
-        score:  r[col('Snabbit Score')] || ''
-      }));
-    dbLoaded = true;
-  } catch(e) { console.error('DB error:', e); }
+function hideError(elId) {
+  document.getElementById(elId).style.display = 'none';
 }
 
 function parseCSV(text) {
   return text.split('\n').map(line => {
     const row = []; let inQ = false, cell = '';
     for (const ch of line) {
-      if (ch === '"') { inQ = !inQ; }
+      if (ch === '"')              { inQ = !inQ; }
       else if (ch === ',' && !inQ) { row.push(cell.trim()); cell = ''; }
-      else { cell += ch; }
+      else                         { cell += ch; }
     }
     row.push(cell.trim());
     return row;
@@ -448,52 +666,314 @@ function distanceM(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// ── GPS ───────────────────────────────────────────────────────────────────────
+async function postToScript(payload) {
+  // Uses no-cors because Apps Script doesn't return CORS headers.
+  // The write still happens server-side even though we can't read the response.
+  await fetch(CONFIG.APPS_SCRIPT_URL, {
+    method:  'POST',
+    mode:    'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload)
+  });
+}
+
+// Converts a cell value to boolean
+// Accepts: "TRUE", "true", "1", "yes" → true; everything else → false
+function toBoolean(val) {
+  return ['true','1','yes'].includes(String(val).toLowerCase().trim());
+}
+
+
+// ─────────────────────────────────────────────────────────
+// CREDENTIALS — load and parse
+// Columns: S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access
+// ─────────────────────────────────────────────────────────
+async function loadCreds() {
+  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.CREDS_SHEET_ID}/gviz/tq?tqx=out:csv`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  const rows = parseCSV(text);
+
+  const headerIdx = rows.findIndex(r => r.some(c => c.toLowerCase().includes('username')));
+  if (headerIdx === -1) throw new Error('Credentials header row not found');
+
+  const h = rows[headerIdx].map(c => c.toLowerCase().trim());
+
+  return {
+    rows,
+    headerIdx,
+    uIdx:       h.findIndex(c => c.includes('username')),
+    pIdx:       h.findIndex(c => c.includes('password')),
+    nIdx:       h.findIndex(c => c.includes('agent name') || (c.includes('name') && !c.includes('user'))),
+    cIdx:       h.findIndex(c => c.includes('agent code') || c.includes('code')),
+    aIdx:       h.findIndex(c => c === 'active'),
+    blastIdx:   h.findIndex(c => c.includes('blast')),   // "Blast Access" column
+    socIdx:     h.findIndex(c => c.includes('society')), // "Society Access" column
+  };
+}
+
+
+// ─────────────────────────────────────────────────────────
+// LOGIN
+// ─────────────────────────────────────────────────────────
+async function doLogin() {
+  const username = document.getElementById('loginUsername').value.trim();
+  const password = document.getElementById('loginPassword').value.trim();
+  const btn      = document.getElementById('loginBtn');
+
+  hideError('loginError');
+  if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
+
+  btn.disabled = true; btn.textContent = 'Signing in…';
+
+  try {
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx } = await loadCreds();
+    const dataRows = rows.slice(headerIdx + 1);
+
+    const match = dataRows.find(r =>
+      r[uIdx]?.toLowerCase().trim() === username.toLowerCase() &&
+      r[pIdx]?.trim()               === password &&
+      toBoolean(r[aIdx])
+    );
+
+    if (!match) {
+      showError('loginError', 'Invalid username or password. Please try again.');
+      btn.disabled = false; btn.textContent = 'Sign In →';
+      return;
+    }
+
+    // Read access flags from the matched row
+    state.agentName     = match[nIdx]    || username;
+    state.agentCode     = match[cIdx]    || username;
+    state.blastAccess   = toBoolean(match[blastIdx]);
+    state.societyAccess = toBoolean(match[socIdx]);
+
+    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess);
+    onLoggedIn();
+
+  } catch(e) {
+    showError('loginError', 'Could not reach server. Check your internet connection.');
+    btn.disabled = false; btn.textContent = 'Sign In →';
+  }
+}
+
+function onLoggedIn() {
+  // Show agent name in header
+  const badge       = document.getElementById('agentBadge');
+  badge.style.display = 'block';
+  badge.textContent   = state.agentName.split(' ')[0] + ' · Logout';
+
+  // Update greeting
+  document.getElementById('homeAgentName').textContent = state.agentName;
+
+  // Reset login form
+  document.getElementById('loginBtn').disabled    = false;
+  document.getElementById('loginBtn').textContent = 'Sign In →';
+  document.getElementById('loginUsername').value  = '';
+  document.getElementById('loginPassword').value  = '';
+
+  // Render home cards based on access flags
+  renderHomeCards();
+
+  // Pre-load database in background
+  loadDatabase();
+  showScreen('screen-home');
+}
+
+function logout() {
+  clearSession();
+  state = { agentName:'', agentCode:'', blastAccess:false, societyAccess:false, userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'' };
+  document.getElementById('agentBadge').style.display = 'none';
+  showScreen('screen-login');
+}
+
+document.getElementById('loginPassword').addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
+document.getElementById('loginUsername').addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
+
+
+// ─────────────────────────────────────────────────────────
+// HOME CARDS — render with access control
+// Active cards navigate to their feature.
+// Locked cards navigate to the access denied screen.
+// ─────────────────────────────────────────────────────────
+function renderHomeCards() {
+  const grid = document.getElementById('homeGrid');
+
+  // Card config — add more features here in future
+  const cards = [
+    {
+      icon:    '🏘️',
+      title:   'Add Society',
+      sub:     'Visit & record a society near you',
+      access:  state.societyAccess,
+      action:  'startAddSociety()',
+    },
+    {
+      icon:    '📲',
+      title:   'WhatsApp Blast',
+      sub:     'Send your unique invite link',
+      access:  state.blastAccess,
+      action:  'startWhatsappBlast()',
+    },
+  ];
+
+  grid.innerHTML = cards.map(card => {
+    if (card.access) {
+      // Active card
+      return `
+        <div class="home-card" onclick="${card.action}">
+          <div class="home-card-icon">${card.icon}</div>
+          <div class="home-card-title">${card.title}</div>
+          <div class="home-card-sub">${card.sub}</div>
+        </div>
+      `;
+    } else {
+      // Locked card — tapping shows access denied screen
+      return `
+        <div class="home-card locked" onclick="showScreen('screen-access-denied')">
+          <div class="lock-badge">🔒</div>
+          <div class="home-card-icon" style="filter:grayscale(1);opacity:0.5">${card.icon}</div>
+          <div class="home-card-title">${card.title}</div>
+          <div class="home-card-sub">Contact admin for access</div>
+        </div>
+      `;
+    }
+  }).join('');
+}
+
+
+// ─────────────────────────────────────────────────────────
+// CHANGE PASSWORD
+// ─────────────────────────────────────────────────────────
+async function doChangePassword() {
+  const username  = document.getElementById('cpUsername').value.trim();
+  const oldPw     = document.getElementById('cpOldPassword').value.trim();
+  const newPw     = document.getElementById('cpNewPassword').value.trim();
+  const confirmPw = document.getElementById('cpConfirmPassword').value.trim();
+  const btn       = document.getElementById('cpBtn');
+
+  hideError('cpError');
+  document.getElementById('cpSuccess').style.display = 'none';
+
+  if (!username || !oldPw || !newPw || !confirmPw) { showError('cpError', 'Please fill in all fields.'); return; }
+  if (newPw.length < 6)    { showError('cpError', 'New password must be at least 6 characters.'); return; }
+  if (newPw !== confirmPw) { showError('cpError', 'New passwords do not match.'); return; }
+
+  btn.disabled = true; btn.textContent = 'Updating…';
+
+  try {
+    const { rows, headerIdx, uIdx, pIdx, aIdx } = await loadCreds();
+    const match = rows.slice(headerIdx + 1).find(r =>
+      r[uIdx]?.toLowerCase().trim() === username.toLowerCase() &&
+      r[pIdx]?.trim()               === oldPw &&
+      toBoolean(r[aIdx])
+    );
+
+    if (!match) { showError('cpError', 'Username or current password is incorrect.'); btn.disabled = false; btn.textContent = 'Update Password'; return; }
+
+    await postToScript({ action: 'changePassword', username, newPassword: newPw, sheetId: CONFIG.CREDS_SHEET_ID });
+
+    document.getElementById('cpSuccess').textContent = 'Password updated! Please login with your new password.';
+    document.getElementById('cpSuccess').style.display = 'block';
+    ['cpUsername','cpOldPassword','cpNewPassword','cpConfirmPassword'].forEach(id => document.getElementById(id).value = '');
+
+  } catch(e) {
+    showError('cpError', 'Could not update password. Check your internet connection.');
+  }
+
+  btn.disabled = false; btn.textContent = 'Update Password';
+}
+
+
+// ─────────────────────────────────────────────────────────
+// SOCIETY DATABASE
+// ─────────────────────────────────────────────────────────
+async function loadDatabase() {
+  if (state.dbLoaded) return;
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Clean+Residential+DB`;
+  try {
+    const res  = await fetch(url);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    const headerIdx = rows.findIndex(r => r.includes('Name') && r.includes('Latitude'));
+    if (headerIdx === -1) return;
+    const h = rows[headerIdx], col = k => h.indexOf(k);
+    state.database = rows.slice(headerIdx + 1)
+      .filter(r => r[col('Latitude')] && !isNaN(parseFloat(r[col('Latitude')])))
+      .map(r => ({
+        name:   r[col('Name')]          || '',
+        lat:    parseFloat(r[col('Latitude')]),
+        lon:    parseFloat(r[col('Longitude')]),
+        tier:   r[col('Snabbit Tier')]  || '',
+        sector: r[col('Sector')]        || '',
+        score:  r[col('Snabbit Score')] || ''
+      }));
+    const seen = new Set();
+    state.allSocieties = state.database
+      .filter(s => s.name && !seen.has(s.name) && seen.add(s.name))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    state.dbLoaded = true;
+  } catch(e) { console.error('Database load error:', e); }
+}
+
+
+// ─────────────────────────────────────────────────────────
+// ADD SOCIETY — GPS FLOW
+// ─────────────────────────────────────────────────────────
+function startAddSociety() {
+  document.getElementById('gpsIcon').textContent = '📍';
+  document.getElementById('gpsIcon').classList.remove('pulsing');
+  document.getElementById('gpsStatus').textContent = 'Ready to detect location';
+  document.getElementById('coordDisplay').style.display = 'none';
+  hideError('gpsError');
+  const btn = document.getElementById('gpsBtn');
+  btn.textContent = '📍 Get My Location'; btn.onclick = getLocation; btn.disabled = false;
+  showScreen('screen-gps');
+}
+
 function getLocation() {
   const btn  = document.getElementById('gpsBtn');
   const icon = document.getElementById('gpsIcon');
   const stat = document.getElementById('gpsStatus');
-  document.getElementById('gpsError').style.display = 'none';
+  hideError('gpsError');
   btn.disabled = true; btn.textContent = 'Detecting…';
   icon.classList.add('pulsing'); stat.textContent = 'Getting your location…';
-  if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
-  navigator.geolocation.getCurrentPosition(pos => {
-    userLat = pos.coords.latitude; userLon = pos.coords.longitude;
-    icon.classList.remove('pulsing'); icon.textContent = '✅';
-    stat.textContent = 'Location captured!';
-    const cd = document.getElementById('coordDisplay');
-    cd.style.display = 'block';
-    cd.textContent = `${userLat.toFixed(6)}, ${userLon.toFixed(6)}  ±${Math.round(pos.coords.accuracy)}m`;
-    btn.textContent = '🔍 Search Nearby Societies';
-    btn.disabled = false; btn.onclick = searchNearby;
-  }, err => {
-    icon.classList.remove('pulsing'); icon.textContent = '❌';
-    btn.disabled = false; btn.textContent = '📍 Try Again';
-    let msg = 'Could not get location. ';
-    if (err.code===1) msg += 'Please allow location permission in your browser.';
-    else if (err.code===2) msg += 'Signal unavailable. Try moving outside.';
-    else msg += 'Timed out. Please try again.';
-    const e = document.getElementById('gpsError');
-    e.textContent = msg; e.style.display = 'block';
-  }, { enableHighAccuracy: true, timeout: 15000 });
+  if (!navigator.geolocation) { alert('Geolocation not supported on this browser.'); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      state.userLat = pos.coords.latitude; state.userLon = pos.coords.longitude;
+      icon.classList.remove('pulsing'); icon.textContent = '✅';
+      stat.textContent = 'Location captured!';
+      const cd = document.getElementById('coordDisplay');
+      cd.style.display = 'block';
+      cd.textContent = `${state.userLat.toFixed(6)}, ${state.userLon.toFixed(6)}  ±${Math.round(pos.coords.accuracy)}m`;
+      btn.textContent = '🔍 Search Nearby Societies'; btn.disabled = false; btn.onclick = searchNearby;
+    },
+    err => {
+      icon.classList.remove('pulsing'); icon.textContent = '❌';
+      btn.disabled = false; btn.textContent = '📍 Try Again';
+      let msg = 'Could not get location. ';
+      if      (err.code === 1) msg += 'Please allow location permission in your browser.';
+      else if (err.code === 2) msg += 'Signal unavailable. Try moving outside.';
+      else                     msg += 'Timed out. Please try again.';
+      showError('gpsError', msg);
+    },
+    { enableHighAccuracy: true, timeout: 15000 }
+  );
 }
 
-// ── SEARCH ────────────────────────────────────────────────────────────────────
 async function searchNearby() {
   showScreen('screen-results');
-  selectedSociety = null;
+  state.selectedSociety = null;
   document.getElementById('confirmMatchForm').style.display = 'none';
   document.getElementById('newSocietyForm').style.display   = 'none';
   const content = document.getElementById('resultsContent');
   content.innerHTML = '<div class="loading"><div class="spinner"></div> Searching 10,636 societies…</div>';
-  if (!dbLoaded) await loadDatabase();
-  if (!database.length) {
-    content.innerHTML = '<div class="error-msg" style="display:block">Could not load database. Check your internet connection.</div>';
-    return;
-  }
-  const nearby = database
-    .map(s => ({ ...s, dist: distanceM(userLat, userLon, s.lat, s.lon) }))
-    .filter(s => s.dist <= RADIUS_M)
+  if (!state.dbLoaded) await loadDatabase();
+  if (!state.database.length) { content.innerHTML = '<div class="error-msg" style="display:block">Could not load database. Check your internet connection.</div>'; return; }
+  const nearby = state.database
+    .map(s => ({ ...s, dist: distanceM(state.userLat, state.userLon, s.lat, s.lon) }))
+    .filter(s => s.dist <= CONFIG.RADIUS_M)
     .sort((a, b) => a.dist - b.dist);
   renderResults(nearby);
 }
@@ -501,14 +981,14 @@ async function searchNearby() {
 function renderResults(nearby) {
   const content = document.getElementById('resultsContent');
   if (nearby.length === 0) {
-    content.innerHTML = `<div class="info-box">📭 No societies found within ${RADIUS_M}m. This looks like a new entry — please add it below.</div>`;
+    content.innerHTML = `<div class="info-box">📭 No societies found within ${CONFIG.RADIUS_M}m. This looks like a new entry — please add it below.</div>`;
     document.getElementById('newSocietyForm').style.display = 'block';
     return;
   }
   content.innerHTML = `
     <div class="results-header">
       <span class="pill pill-match">Matches Found</span>
-      <span class="pill pill-count">${nearby.length} within ${RADIUS_M}m</span>
+      <span class="pill pill-count">${nearby.length} within ${CONFIG.RADIUS_M}m</span>
     </div>
     <p class="sub" style="margin-bottom:16px">Tap the society you are standing at.</p>
     ${nearby.map((s, i) => `
@@ -526,7 +1006,7 @@ function renderResults(nearby) {
 function selectSociety(idx) {
   document.querySelectorAll('.society-card').forEach(c => c.classList.remove('selected'));
   document.getElementById(`card-${idx}`).classList.add('selected');
-  selectedSociety = window._nearby[idx];
+  state.selectedSociety = window._nearby[idx];
   document.getElementById('existingFlatCount').value = '';
   document.getElementById('confirmMatchForm').style.display = 'block';
   document.getElementById('newSocietyForm').style.display   = 'none';
@@ -535,33 +1015,18 @@ function selectSociety(idx) {
 
 function showNewForm() {
   document.querySelectorAll('.society-card').forEach(c => c.classList.remove('selected'));
-  selectedSociety = null;
+  state.selectedSociety = null;
   document.getElementById('confirmMatchForm').style.display = 'none';
   document.getElementById('newSocietyForm').style.display   = 'block';
   document.getElementById('newSocietyForm').scrollIntoView({ behavior: 'smooth' });
-}
-
-// ── SUBMIT ────────────────────────────────────────────────────────────────────
-async function postToSheet(payload) {
-  await fetch(APPS_SCRIPT_URL, {
-    method: 'POST', mode: 'no-cors',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
 }
 
 async function submitMatch() {
   const flatCount = document.getElementById('existingFlatCount').value.trim();
   const btn = document.getElementById('submitMatchBtn');
   btn.disabled = true; btn.textContent = 'Submitting…';
-  const payload = {
-    timestamp: new Date().toISOString(), agentName,
-    societyName: selectedSociety.name, latitude: userLat, longitude: userLon,
-    flatCount: flatCount || 'Not updated', isNew: 'No',
-    matchedSociety: selectedSociety.name, notes: ''
-  };
-  await postToSheet(payload);
-  showSuccess(payload);
+  await postToScript({ action: 'submitSociety', timestamp: new Date().toISOString(), agentName: state.agentName, societyName: state.selectedSociety.name, latitude: state.userLat, longitude: state.userLon, flatCount: flatCount || 'Not updated', isNew: 'No', matchedSociety: state.selectedSociety.name, notes: '' });
+  showSocietySuccess({ societyName: state.selectedSociety.name, flatCount: flatCount || 'Not updated', isNew: 'No' });
 }
 
 async function submitNew() {
@@ -572,48 +1037,128 @@ async function submitNew() {
   if (!name)  { alert('Please enter the society name.'); return; }
   if (!flats) { alert('Please enter the flat count.'); return; }
   btn.disabled = true; btn.textContent = 'Submitting…';
-  const payload = {
-    timestamp: new Date().toISOString(), agentName,
-    societyName: name, latitude: userLat, longitude: userLon,
-    flatCount: flats, isNew: 'Yes', matchedSociety: '', notes
-  };
-  await postToSheet(payload);
-  showSuccess(payload);
+  await postToScript({ action: 'submitSociety', timestamp: new Date().toISOString(), agentName: state.agentName, societyName: name, latitude: state.userLat, longitude: state.userLon, flatCount: flats, isNew: 'Yes', matchedSociety: '', notes });
+  showSocietySuccess({ societyName: name, flatCount: flats, isNew: 'Yes' });
 }
 
-function showSuccess(data) {
+function showSocietySuccess(data) {
   document.getElementById('successDetail').innerHTML = `
     <div class="detail-row"><span>Society</span><span>${data.societyName}</span></div>
-    <div class="detail-row"><span>Agent</span><span>${data.agentName}</span></div>
+    <div class="detail-row"><span>Agent</span><span>${state.agentName}</span></div>
     <div class="detail-row"><span>Flats</span><span>${data.flatCount}</span></div>
     <div class="detail-row"><span>New Entry</span><span>${data.isNew}</span></div>
-    <div class="detail-row"><span>GPS</span><span>${userLat.toFixed(5)}, ${userLon.toFixed(5)}</span></div>
+    <div class="detail-row"><span>GPS</span><span>${state.userLat.toFixed(5)}, ${state.userLon.toFixed(5)}</span></div>
   `;
   showScreen('screen-success');
 }
 
 function scanAnother() {
   ['newSocietyName','newFlatCount','newNotes','existingFlatCount'].forEach(id => document.getElementById(id).value = '');
-  userLat = null; userLon = null;
-  document.getElementById('gpsIcon').textContent = '📍';
-  document.getElementById('gpsIcon').classList.remove('pulsing');
-  document.getElementById('gpsStatus').textContent = 'Ready to detect location';
-  document.getElementById('coordDisplay').style.display = 'none';
-  document.getElementById('gpsError').style.display = 'none';
-  const btn = document.getElementById('gpsBtn');
-  btn.textContent = '📍 Get My Location'; btn.onclick = getLocation; btn.disabled = false;
-  showScreen('screen-gps');
+  startAddSociety();
 }
 
-// ── ENTER KEY SUPPORT ─────────────────────────────────────────────────────────
-document.getElementById('loginPassword').addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
-document.getElementById('loginUsername').addEventListener('keydown', e => { if (e.key==='Enter') doLogin(); });
 
-// ── AUTO LOGIN IF SESSION VALID ───────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// WHATSAPP BLAST FLOW
+// ─────────────────────────────────────────────────────────
+async function startWhatsappBlast() {
+  hideError('blastError');
+  showScreen('screen-blast');
+  if (!state.dbLoaded) {
+    document.getElementById('generateBtn').disabled    = true;
+    document.getElementById('generateBtn').textContent = 'Loading societies…';
+    await loadDatabase();
+    document.getElementById('generateBtn').disabled    = false;
+    document.getElementById('generateBtn').textContent = 'Generate Message →';
+  }
+  populateBlastDropdown(state.allSocieties);
+}
+
+function populateBlastDropdown(societies) {
+  const select = document.getElementById('blastSocietySelect');
+  select.innerHTML = '<option value="">— Select a society —</option>';
+  societies.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.name;
+    opt.textContent = `${s.name} (Sector ${s.sector})`;
+    select.appendChild(opt);
+  });
+}
+
+function filterBlastSocieties() {
+  const query    = document.getElementById('blastSearch').value.toLowerCase().trim();
+  const filtered = query ? state.allSocieties.filter(s => s.name.toLowerCase().includes(query)) : state.allSocieties;
+  populateBlastDropdown(filtered);
+}
+
+function generateBlast() {
+  const society = document.getElementById('blastSocietySelect').value.trim();
+  hideError('blastError');
+  if (!society)           { showError('blastError', 'Please select a society first.'); return; }
+  if (!state.agentCode)   { showError('blastError', 'Agent code not found. Please logout and login again.'); return; }
+
+  state.blastSociety = society;
+
+  // Build unique tracking link for this agent
+  const trackingLink = `${CONFIG.TRACKING_BASE}?ref=${encodeURIComponent(state.agentCode)}&soc=${CONFIG.SOCIETY_CODE}`;
+
+  // Fill placeholders in template
+  const message = WHATSAPP_TEMPLATE
+    .replace('{{SOCIETY}}',    society)
+    .replace('{{LINK}}',       trackingLink)
+    .replace('{{AGENT_NAME}}', state.agentName);
+
+  // Populate preview screen
+  document.getElementById('previewAgentName').textContent  = state.agentName;
+  document.getElementById('previewAgentCode').textContent  = state.agentCode;
+  document.getElementById('previewSociety').textContent    = society;
+  document.getElementById('previewLink').textContent       = trackingLink;
+  document.getElementById('blastMessagePreview').textContent = message;
+
+  // Store for sendWhatsApp
+  window._blastMessage      = message;
+  window._blastTrackingLink = trackingLink;
+
+  showScreen('screen-blast-preview');
+}
+
+async function sendWhatsApp() {
+  // Open WhatsApp with message pre-filled
+  window.open(`https://wa.me/?text=${encodeURIComponent(window._blastMessage)}`, '_blank');
+
+  // Log blast to tracking sheet
+  await postToScript({
+    action:       'logBlast',
+    timestamp:    new Date().toISOString(),
+    agentName:    state.agentName,
+    agentCode:    state.agentCode,
+    society:      state.blastSociety,
+    trackingLink: window._blastTrackingLink,
+    sheetId:      CONFIG.BLAST_SHEET_ID
+  });
+
+  // Show success
+  document.getElementById('blastSuccessDetail').innerHTML = `
+    <div class="detail-row"><span>Agent</span><span>${state.agentName}</span></div>
+    <div class="detail-row"><span>Agent Code</span><span>${state.agentCode}</span></div>
+    <div class="detail-row"><span>Society</span><span>${state.blastSociety}</span></div>
+    <div class="detail-row"><span>Link</span><span>${window._blastTrackingLink}</span></div>
+    <div class="detail-row"><span>Time</span><span>${new Date().toLocaleTimeString()}</span></div>
+  `;
+  showScreen('screen-blast-success');
+}
+
+
+// ─────────────────────────────────────────────────────────
+// AUTO LOGIN — restore session on page load
+// ─────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
   const session = loadSession();
   if (session) {
-    agentName = session.name;
+    state.agentName     = session.name;
+    state.agentCode     = session.agentCode;
+    state.blastAccess   = session.blastAccess;
+    state.societyAccess = session.societyAccess;
     onLoggedIn();
   }
 });
