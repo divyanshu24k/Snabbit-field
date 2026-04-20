@@ -468,7 +468,10 @@
     </div>
     <!-- Submit button disabled after first tap to prevent duplicate submissions -->
     <button class="btn btn-primary" id="submitMatchBtn" onclick="submitMatch()">✓ Confirm This Society</button>
-    <button class="btn btn-secondary" onclick="showNewForm()">Not here — add new instead</button>
+  </div>
+  <!-- Always visible — agent can add a new society at any time -->
+  <div id="addNewSection" style="margin-top:12px">
+    <button class="btn btn-secondary" style="margin-top:0" onclick="showNewForm()">➕ This society is not listed — add new</button>
   </div>
   <div id="newSocietyForm" style="display:none">
     <div class="divider">NEW SOCIETY</div>
@@ -1006,6 +1009,7 @@ function showNewForm() {
   document.querySelectorAll('.society-card').forEach(c => c.classList.remove('selected'));
   state.selectedSociety = null;
   document.getElementById('confirmMatchForm').style.display = 'none';
+  document.getElementById('addNewSection').style.display    = 'none';
   document.getElementById('newSocietyForm').style.display   = 'block';
   document.getElementById('submitNewBtn').disabled = false;
   document.getElementById('submitNewBtn').textContent = 'Submit New Society';
@@ -1113,6 +1117,7 @@ function showSocietySuccess(data) {
 
 function scanAnother() {
   ['newSocietyName','newFlatCount','newNotes','existingFlatCount'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('addNewSection').style.display = 'block';
   startAddSociety();
 }
 
