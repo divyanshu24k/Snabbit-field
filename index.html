@@ -433,24 +433,6 @@
 
   <div id="gpsError" class="error-msg"></div>
   <button class="btn btn-primary" id="gpsBtn" onclick="getLocation()">📍 Get My Location</button>
-
-  <!-- Manual GPS input — for testing purposes -->
-  <div style="margin-top:20px;background:var(--surface);border:2px dashed var(--border);border-radius:var(--radius);padding:18px;">
-    <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px;">🧪 Manual Entry (Testing)</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div>
-        <div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;">Latitude</div>
-        <input type="number" id="manualLat" placeholder="e.g. 28.4814" step="any"
-          style="width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:600;color:var(--navy);outline:none;" />
-      </div>
-      <div>
-        <div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;">Longitude</div>
-        <input type="number" id="manualLon" placeholder="e.g. 76.9728" step="any"
-          style="width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:600;color:var(--navy);outline:none;" />
-      </div>
-    </div>
-    <button class="btn btn-secondary" style="margin-top:0;border-color:var(--border)" onclick="useManualGPS()">Use These Coordinates →</button>
-  </div>
 </div>
 
 
@@ -465,6 +447,9 @@
   <div id="confirmMatchForm" style="display:none">
     <div class="input-wrap" style="margin-top:4px">
       <input type="number" id="existingFlatCount" placeholder="Confirm / update flat count" min="1" />
+    </div>
+    <div class="input-wrap">
+      <textarea id="existingNotes" placeholder="Notes (optional) — gate type, RWA contact, etc."></textarea>
     </div>
     <!-- Submit button disabled after first tap to prevent duplicate submissions -->
     <button class="btn btn-primary" id="submitMatchBtn" onclick="submitMatch()">✓ Confirm This Society</button>
@@ -564,7 +549,7 @@
 // CONFIG
 // ─────────────────────────────────────────────────────────
 const CONFIG = {
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycby4h5mCtaqa4HNlgN77fwqwgQfP_31ZBGdGMKr9C6bkzCD1UU5dFWvUk7wO5uVXdc10Bw/exec',
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycby8rJWWdoOFCUiW949XgskMmkIevrWZpuq9sJAVzOML2D6jUJB5MHvmmv_pF7ttDDHeTA/exec',
   DB_SHEET_ID:     '1ZWfPa95bOhDnEhxTVahru6BpUsTijl9Po8vL2jpVK0A',
   CREDS_SHEET_ID:  '1Q4GpTRZMj2bGg025n6cMNrIkm1D6XJBqOr-bm2J8qCY',
   SUBMIT_SHEET_ID: '1GvCUiO1QclTwu7uwbkRVeswIxhpKPqdzVttir_CnSQU',
@@ -1045,18 +1030,13 @@ async function checkIfAlreadySubmitted(societyName) {
 
 async function submitMatch() {
   const flatCount = document.getElementById('existingFlatCount').value.trim();
+  const notes     = document.getElementById('existingNotes').value.trim();
   const btn       = document.getElementById('submitMatchBtn');
-  // Disable immediately to prevent duplicate taps
   btn.disabled = true; btn.textContent = 'Checking…';
-
-  const societyName   = state.selectedSociety.name;
-  const alreadySub    = await checkIfAlreadySubmitted(societyName);
-
-  // isNew: Yes if first time in submission sheet, No if already submitted before
-  // partOfDatabase: Yes because agent selected it from the nearby DB results
-  const isNew         = alreadySub ? 'No' : 'Yes';
+  const societyName    = state.selectedSociety.name;
+  const alreadySub     = await checkIfAlreadySubmitted(societyName);
+  const isNew          = alreadySub ? 'No' : 'Yes';
   const partOfDatabase = 'Yes';
-
   btn.textContent = 'Submitting…';
   await postToScript({
     action: 'submitSociety',
@@ -1068,6 +1048,7 @@ async function submitMatch() {
     flatCount: flatCount || 'Not updated',
     isNew,
     partOfDatabase,
+    notes,
   });
   showSocietySuccess({ societyName, flatCount: flatCount || 'Not updated', isNew, partOfDatabase });
 }
@@ -1116,7 +1097,7 @@ function showSocietySuccess(data) {
 }
 
 function scanAnother() {
-  ['newSocietyName','newFlatCount','newNotes','existingFlatCount'].forEach(id => document.getElementById(id).value = '');
+  ['newSocietyName','newFlatCount','newNotes','existingFlatCount','existingNotes'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('addNewSection').style.display = 'block';
   startAddSociety();
 }
