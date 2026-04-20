@@ -77,9 +77,7 @@
     --muted:        #9090A0;
     --success:      #00C48C;
     --error:        #FF3B5C;
-    --warn-bg:      #FFF8E1;
-    --warn-border:  #FFD54F;
-    --warn-text:    #E65100;
+
     --radius:       16px;
   }
 
@@ -225,7 +223,6 @@
   /* ── MESSAGES ── */
   .error-msg { background: #FFF0F5; border: 1.5px solid rgba(255,31,125,0.3); color: var(--error); border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
   .success-msg { background: rgba(0,196,140,0.08); border: 1.5px solid rgba(0,196,140,0.3); color: #00966A; border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
-  .warn-msg { background: var(--warn-bg); border: 1.5px solid var(--warn-border); color: var(--warn-text); border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; line-height: 1.5; }
   .info-box { background: var(--surface2); border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 14px; font-weight: 600; color: var(--navy2); margin-bottom: 20px; line-height: 1.6; }
 
   /* ── CONFIRM MODAL ── */
@@ -433,12 +430,27 @@
     <div class="gps-status" id="gpsStatus">Ready to detect location</div>
     <div id="coordDisplay" class="coord-display" style="display:none"></div>
   </div>
-  <!-- GPS accuracy warning — shown if accuracy > 50m -->
-  <div id="gpsWarn" class="warn-msg">
-    ⚠️ Your GPS signal is weak. Move to an open area (away from buildings) and try again for a more accurate location.
-  </div>
+
   <div id="gpsError" class="error-msg"></div>
   <button class="btn btn-primary" id="gpsBtn" onclick="getLocation()">📍 Get My Location</button>
+
+  <!-- Manual GPS input — for testing purposes -->
+  <div style="margin-top:20px;background:var(--surface);border:2px dashed var(--border);border-radius:var(--radius);padding:18px;">
+    <div style="font-size:12px;font-weight:700;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px;">🧪 Manual Entry (Testing)</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;">Latitude</div>
+        <input type="number" id="manualLat" placeholder="e.g. 28.4814" step="any"
+          style="width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:600;color:var(--navy);outline:none;" />
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:5px;text-transform:uppercase;letter-spacing:0.5px;">Longitude</div>
+        <input type="number" id="manualLon" placeholder="e.g. 76.9728" step="any"
+          style="width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 12px;font-family:'Nunito',sans-serif;font-size:14px;font-weight:600;color:var(--navy);outline:none;" />
+      </div>
+    </div>
+    <button class="btn btn-secondary" style="margin-top:0;border-color:var(--border)" onclick="useManualGPS()">Use These Coordinates →</button>
+  </div>
 </div>
 
 
@@ -558,7 +570,6 @@ const CONFIG = {
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
   TRACKING_BASE:   'https://snabbit.app/download',
-  GPS_WARN_METRES: 50,    // Warn agent if GPS accuracy is worse than this
   MAX_SEARCH_RESULTS: 20, // Max societies shown in search dropdown
 };
 
@@ -882,7 +893,7 @@ function startAddSociety() {
   document.getElementById('gpsIcon').classList.remove('pulsing');
   document.getElementById('gpsStatus').textContent = 'Ready to detect location';
   document.getElementById('coordDisplay').style.display = 'none';
-  hideMsg('gpsError'); hideMsg('gpsWarn');
+  hideMsg('gpsError');
   const btn = document.getElementById('gpsBtn');
   btn.textContent = '📍 Get My Location'; btn.onclick = getLocation; btn.disabled = false;
   navigate('screen-gps');
@@ -890,7 +901,7 @@ function startAddSociety() {
 
 function getLocation() {
   const btn = document.getElementById('gpsBtn'), icon = document.getElementById('gpsIcon'), stat = document.getElementById('gpsStatus');
-  hideMsg('gpsError'); hideMsg('gpsWarn');
+  hideMsg('gpsError');
   btn.disabled = true; btn.textContent = 'Detecting…';
   icon.classList.add('pulsing'); stat.textContent = 'Getting your location…';
   if (!navigator.geolocation) { alert('Geolocation not supported on this browser.'); return; }
@@ -903,13 +914,7 @@ function getLocation() {
       const cd = document.getElementById('coordDisplay');
       cd.style.display = 'block';
       cd.textContent = `${state.userLat.toFixed(6)}, ${state.userLon.toFixed(6)}  ±${accuracy}m`;
-      // Warn if GPS accuracy is weak
-      if (accuracy > CONFIG.GPS_WARN_METRES) {
-        document.getElementById('gpsWarn').style.display = 'block';
-        btn.textContent = '🔍 Search Anyway';
-      } else {
-        btn.textContent = '🔍 Search Nearby Societies';
-      }
+      btn.textContent = '🔍 Search Nearby Societies';
       btn.disabled = false; btn.onclick = searchNearby;
     },
     err => {
@@ -923,6 +928,26 @@ function getLocation() {
     },
     { enableHighAccuracy: true, timeout: 15000 }
   );
+}
+
+function useManualGPS() {
+  const lat = parseFloat(document.getElementById('manualLat').value);
+  const lon = parseFloat(document.getElementById('manualLon').value);
+  if (isNaN(lat) || isNaN(lon))  { alert('Please enter valid latitude and longitude.'); return; }
+  if (lat < -90  || lat > 90)    { alert('Latitude must be between -90 and 90.'); return; }
+  if (lon < -180 || lon > 180)   { alert('Longitude must be between -180 and 180.'); return; }
+  state.userLat = lat;
+  state.userLon = lon;
+  document.getElementById('gpsIcon').classList.remove('pulsing');
+  document.getElementById('gpsIcon').textContent   = '📍';
+  document.getElementById('gpsStatus').textContent = 'Manual location set';
+  const cd = document.getElementById('coordDisplay');
+  cd.style.display = 'block';
+  cd.textContent   = `${lat.toFixed(6)}, ${lon.toFixed(6)}  (manual)`;
+  const btn = document.getElementById('gpsBtn');
+  btn.textContent = '🔍 Search Nearby Societies';
+  btn.disabled    = false;
+  btn.onclick     = searchNearby;
 }
 
 async function searchNearby() {
