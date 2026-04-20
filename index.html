@@ -983,8 +983,7 @@ function renderResults(nearby) {
       <div class="society-card" id="card-${i}" onclick="selectSociety(${i})">
         <div class="s-dist">${Math.round(s.dist)}m</div>
         <div class="s-name">${s.name}</div>
-        <div class="s-meta"><span>📍 Sector ${s.sector}</span>${s.score ? `<span>⭐ ${parseFloat(s.score).toFixed(2)}</span>` : ''}</div>
-        <div class="s-tier">${s.tier}</div>
+        <div class="s-meta"><span>📍 Sector ${s.sector}</span></div>
       </div>
     `).join('')}
   `;
@@ -1013,26 +1012,91 @@ function showNewForm() {
   document.getElementById('newSocietyForm').scrollIntoView({ behavior: 'smooth' });
 }
 
+// ─────────────────────────────────────────────────────────
+// SUBMISSION SHEET CHECK
+// Fetches the submission sheet and checks if a society name
+// has already been submitted before (exact match).
+// Returns true if already submitted, false if first time.
+// ─────────────────────────────────────────────────────────
+async function checkIfAlreadySubmitted(societyName) {
+  try {
+    const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.SUBMIT_SHEET_ID}/gviz/tq?tqx=out:csv`;
+    const res  = await fetch(url);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    // Find Society Name column
+    const headerIdx = rows.findIndex(r => r.some(c => c.toLowerCase().includes('society')));
+    if (headerIdx === -1) return false;
+    const h       = rows[headerIdx].map(c => c.toLowerCase().trim());
+    const socIdx  = h.findIndex(c => c.includes('society'));
+    if (socIdx === -1) return false;
+    // Check if exact society name exists in any data row
+    return rows.slice(headerIdx + 1).some(r => r[socIdx]?.trim() === societyName.trim());
+  } catch(e) {
+    // If check fails, default to false (treat as new) so submission isn't blocked
+    console.error('Submission check error:', e);
+    return false;
+  }
+}
+
 async function submitMatch() {
   const flatCount = document.getElementById('existingFlatCount').value.trim();
-  const btn = document.getElementById('submitMatchBtn');
+  const btn       = document.getElementById('submitMatchBtn');
   // Disable immediately to prevent duplicate taps
-  btn.disabled = true; btn.textContent = 'Submitting…';
-  await postToScript({ action:'submitSociety', timestamp:new Date().toISOString(), agentName:state.agentName, societyName:state.selectedSociety.name, latitude:state.userLat, longitude:state.userLon, flatCount:flatCount||'Not updated', isNew:'No', matchedSociety:state.selectedSociety.name, notes:'' });
-  showSocietySuccess({ societyName:state.selectedSociety.name, flatCount:flatCount||'Not updated', isNew:'No' });
+  btn.disabled = true; btn.textContent = 'Checking…';
+
+  const societyName   = state.selectedSociety.name;
+  const alreadySub    = await checkIfAlreadySubmitted(societyName);
+
+  // isNew: Yes if first time in submission sheet, No if already submitted before
+  // partOfDatabase: Yes because agent selected it from the nearby DB results
+  const isNew         = alreadySub ? 'No' : 'Yes';
+  const partOfDatabase = 'Yes';
+
+  btn.textContent = 'Submitting…';
+  await postToScript({
+    action: 'submitSociety',
+    timestamp: new Date().toISOString(),
+    agentName: state.agentName,
+    societyName,
+    latitude:  state.userLat,
+    longitude: state.userLon,
+    flatCount: flatCount || 'Not updated',
+    isNew,
+    partOfDatabase,
+  });
+  showSocietySuccess({ societyName, flatCount: flatCount || 'Not updated', isNew, partOfDatabase });
 }
 
 async function submitNew() {
-  const name = document.getElementById('newSocietyName').value.trim();
+  const name  = document.getElementById('newSocietyName').value.trim();
   const flats = document.getElementById('newFlatCount').value.trim();
-  const notes = document.getElementById('newNotes').value.trim();
-  const btn = document.getElementById('submitNewBtn');
+  const btn   = document.getElementById('submitNewBtn');
   if (!name)  { alert('Please enter the society name.'); return; }
   if (!flats) { alert('Please enter the flat count.'); return; }
   // Disable immediately to prevent duplicate taps
-  btn.disabled = true; btn.textContent = 'Submitting…';
-  await postToScript({ action:'submitSociety', timestamp:new Date().toISOString(), agentName:state.agentName, societyName:name, latitude:state.userLat, longitude:state.userLon, flatCount:flats, isNew:'Yes', matchedSociety:'', notes });
-  showSocietySuccess({ societyName:name, flatCount:flats, isNew:'Yes' });
+  btn.disabled = true; btn.textContent = 'Checking…';
+
+  const alreadySub = await checkIfAlreadySubmitted(name);
+
+  // isNew: Yes if first time in submission sheet, No if already submitted before
+  // partOfDatabase: No because agent typed it in — not found in nearby DB results
+  const isNew          = alreadySub ? 'No' : 'Yes';
+  const partOfDatabase = 'No';
+
+  btn.textContent = 'Submitting…';
+  await postToScript({
+    action: 'submitSociety',
+    timestamp: new Date().toISOString(),
+    agentName: state.agentName,
+    societyName: name,
+    latitude:  state.userLat,
+    longitude: state.userLon,
+    flatCount: flats,
+    isNew,
+    partOfDatabase,
+  });
+  showSocietySuccess({ societyName: name, flatCount: flats, isNew, partOfDatabase });
 }
 
 function showSocietySuccess(data) {
@@ -1040,7 +1104,8 @@ function showSocietySuccess(data) {
     <div class="detail-row"><span>Society</span><span>${data.societyName}</span></div>
     <div class="detail-row"><span>Agent</span><span>${state.agentName}</span></div>
     <div class="detail-row"><span>Flats</span><span>${data.flatCount}</span></div>
-    <div class="detail-row"><span>New Entry</span><span>${data.isNew}</span></div>
+    <div class="detail-row"><span>Is New</span><span>${data.isNew}</span></div>
+    <div class="detail-row"><span>Part of Database</span><span>${data.partOfDatabase}</span></div>
     <div class="detail-row"><span>GPS</span><span>${state.userLat.toFixed(5)}, ${state.userLon.toFixed(5)}</span></div>
   `;
   navigate('screen-success');
