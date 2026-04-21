@@ -557,7 +557,7 @@ const CONFIG = {
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
-  TRACKING_BASE:   'https://snabbit.app/download',
+  TRACKING_BASE:   'https://play.google.com/store/apps/details?id=com.snabbit.customer',
   MAX_SEARCH_RESULTS: 20, // Max societies shown in search dropdown
 };
 
@@ -1192,7 +1192,7 @@ function generateBlast() {
   if (!state.blastSociety) { showError('blastError', 'Please search and select a society first.'); return; }
   if (!state.agentCode)    { showError('blastError', 'Agent code not found. Please logout and login again.'); return; }
 
-  const trackingLink = `${CONFIG.TRACKING_BASE}?ref=${encodeURIComponent(state.agentCode)}&soc=${CONFIG.SOCIETY_CODE}`;
+  const trackingLink = `${CONFIG.TRACKING_BASE}&ref=${encodeURIComponent(state.agentCode)}&soc=${CONFIG.SOCIETY_CODE}`;
   const message = WHATSAPP_TEMPLATE
     .replace('{{SOCIETY}}',    state.blastSociety)
     .replace('{{LINK}}',       trackingLink)
