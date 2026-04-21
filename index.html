@@ -549,7 +549,7 @@
 // CONFIG
 // ─────────────────────────────────────────────────────────
 const CONFIG = {
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbzNofLRzeqRsaPicmxFQnBDfQJcX7xYYCNptKXWwXZfSAQm2eDnEYVjG7h0ykp7PzCAoA/exec',
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxu1n9vHXfLKg4fLwcmNqEmcapBabWJywN2UWxLj26vEBKqkpPB6HXH8k9ubDQ2xGXm0g/exec',
   DB_SHEET_ID:     '1ZWfPa95bOhDnEhxTVahru6BpUsTijl9Po8vL2jpVK0A',
   CREDS_SHEET_ID:  '1Q4GpTRZMj2bGg025n6cMNrIkm1D6XJBqOr-bm2J8qCY',
   SUBMIT_SHEET_ID: '1GvCUiO1QclTwu7uwbkRVeswIxhpKPqdzVttir_CnSQU',
@@ -944,7 +944,7 @@ async function searchNearby() {
   document.getElementById('confirmMatchForm').style.display = 'none';
   document.getElementById('newSocietyForm').style.display   = 'none';
   const content = document.getElementById('resultsContent');
-  content.innerHTML = '<div class="loading"><div class="spinner"></div> Searching 10,636 societies…</div>';
+  content.innerHTML = '<div class="loading"><div class="spinner"></div> Searching…</div>';
   if (!state.dbLoaded) await loadDatabase();
   if (!state.database.length) { content.innerHTML = '<div class="error-msg" style="display:block">Could not load database. Check your internet connection.</div>'; return; }
   const nearby = state.database
@@ -998,6 +998,9 @@ function showNewForm() {
   document.getElementById('newSocietyForm').style.display   = 'block';
   document.getElementById('submitNewBtn').disabled = false;
   document.getElementById('submitNewBtn').textContent = 'Submit New Society';
+  document.getElementById('newSocietyName').value = '';
+  document.getElementById('newFlatCount').value = '';
+  document.getElementById('newNotes').value = '';
   document.getElementById('newSocietyForm').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -1056,19 +1059,14 @@ async function submitMatch() {
 async function submitNew() {
   const name  = document.getElementById('newSocietyName').value.trim();
   const flats = document.getElementById('newFlatCount').value.trim();
+  const notes = document.getElementById('newNotes').value.trim();
   const btn   = document.getElementById('submitNewBtn');
   if (!name)  { alert('Please enter the society name.'); return; }
   if (!flats) { alert('Please enter the flat count.'); return; }
-  // Disable immediately to prevent duplicate taps
   btn.disabled = true; btn.textContent = 'Checking…';
-
-  const alreadySub = await checkIfAlreadySubmitted(name);
-
-  // isNew: Yes if first time in submission sheet, No if already submitted before
-  // partOfDatabase: No because agent typed it in — not found in nearby DB results
+  const alreadySub     = await checkIfAlreadySubmitted(name);
   const isNew          = alreadySub ? 'No' : 'Yes';
   const partOfDatabase = 'No';
-
   btn.textContent = 'Submitting…';
   await postToScript({
     action: 'submitSociety',
@@ -1080,6 +1078,7 @@ async function submitNew() {
     flatCount: flats,
     isNew,
     partOfDatabase,
+    notes,
   });
   showSocietySuccess({ societyName: name, flatCount: flats, isNew, partOfDatabase });
 }
@@ -1097,8 +1096,17 @@ function showSocietySuccess(data) {
 }
 
 function scanAnother() {
+  // Reset all form fields
   ['newSocietyName','newFlatCount','newNotes','existingFlatCount','existingNotes'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('addNewSection').style.display = 'block';
+  // Reset all buttons to their original state
+  document.getElementById('submitMatchBtn').disabled    = false;
+  document.getElementById('submitMatchBtn').textContent = '✓ Confirm This Society';
+  document.getElementById('submitNewBtn').disabled      = false;
+  document.getElementById('submitNewBtn').textContent   = 'Submit New Society';
+  // Hide forms and show add new button
+  document.getElementById('confirmMatchForm').style.display = 'none';
+  document.getElementById('newSocietyForm').style.display   = 'none';
+  document.getElementById('addNewSection').style.display    = 'block';
   startAddSociety();
 }
 
