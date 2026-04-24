@@ -7,62 +7,20 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  ============================================================
-  VERSION     : 4.0
-  LAST UPDATED: 2026
+  VERSION     : 5.0
+  LAST UPDATED: April 2026
 
-  CHANGES IN v4.0:
-    - Locked features hidden entirely (not greyed out)
-    - Back arrow in top-left header on every screen
-    - GPS accuracy warning if signal weaker than 50m
-    - Confirmation prompt before WhatsApp opens
-    - Submit button disabled after tap to prevent duplicates
-    - Agent full name shown on home screen
-    - Society list shows top 20 results as you type (both features)
-
-  FEATURES:
-    1. Login with credentials from Google Sheet (24hr session)
-    2. Change Password
-    3. Role-based access — hidden features per agent
-    4. Add Society — GPS-based society search & submission
-    5. WhatsApp Blast — unique tracking link per agent
-
-  CREDENTIALS SHEET COLUMNS:
-    S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access
-
-  GOOGLE SHEETS:
-    DB_SHEET_ID      — 10,636 Gurgaon society database (read)
-    CREDS_SHEET_ID   — Agent credentials (read + password update)
-    SUBMIT_SHEET_ID  — Society visit submissions (write)
-    BLAST_SHEET_ID   — WhatsApp blast tracking log (write)
-
-  APPS SCRIPT:
-    APPS_SCRIPT_URL  — Handles: submitSociety, changePassword, logBlast
-
-  TRACKING LINK FORMAT:
-    https://snabbit.app/download?ref=AGENTCODE&soc=SNABBIT
-
-  MESSAGE TEMPLATE:
-    Defined in WHATSAPP_TEMPLATE constant.
-    Placeholders: {{SOCIETY}}, {{LINK}}, {{AGENT_NAME}}
-
-  HOW TO UPDATE:
-    Edit index.html in GitHub → Vercel auto-deploys in 30 seconds
-
-  DEVELOPER NOTES:
-    - Vanilla HTML/CSS/JS — no framework
-    - All Sheet reads use public gviz CSV endpoint
-    - All writes go through Apps Script POST (no-cors)
-    - Session in localStorage (24hr expiry)
-    - Access flags stored in session — no re-fetch on load
-    - Society search: client-side filter, top 20 results shown
-    - GPS accuracy threshold: 50m (warn if worse)
-    - Submit buttons disabled after first tap to prevent dupes
+  CHANGES IN v5.0:
+    - Add Society now shows 2 options: NM Society List + Add Society
+    - Option 1: City + NM filter → read-only society list (Live NM + Future NM)
+    - Option 2: GPS flow with NM shown on result cards
+    - Database columns updated to new schema
+    - Manual GPS coordinates input added (for testing)
+    - All column refs updated: name, latitude, longitude, building_type, Live NM, Area, City
   ============================================================
 -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
-
   :root {
     --bg:           #FDE8F0;
     --surface:      #FFFFFF;
@@ -77,10 +35,8 @@
     --muted:        #9090A0;
     --success:      #00C48C;
     --error:        #FF3B5C;
-
     --radius:       16px;
   }
-
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: var(--bg);
@@ -107,7 +63,6 @@
     min-height: 56px;
   }
   .header-left { display: flex; align-items: center; gap: 10px; }
-  /* Back button — hidden on login/home, shown on all sub-screens */
   .back-btn {
     width: 36px; height: 36px;
     background: var(--surface2);
@@ -153,21 +108,66 @@
   .input-wrap { margin-bottom: 14px; position: relative; }
   .input-wrap label { display: block; font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
   .input-wrap input,
-  .input-wrap textarea {
+  .input-wrap textarea,
+  .input-wrap select {
     width: 100%; background: var(--surface); border: 2px solid var(--border);
     border-radius: var(--radius); padding: 15px 18px; color: var(--text);
     font-family: 'Nunito', sans-serif; font-size: 15px; font-weight: 600;
     outline: none; transition: border-color 0.2s, box-shadow 0.2s; -webkit-appearance: none;
   }
   .input-wrap input:focus,
-  .input-wrap textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,31,125,0.1); }
+  .input-wrap textarea:focus,
+  .input-wrap select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,31,125,0.1); }
   .input-wrap input::placeholder,
   .input-wrap textarea::placeholder { color: var(--muted); font-weight: 500; }
   .input-wrap textarea { resize: none; height: 80px; }
+  .input-wrap select { cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239090A0' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; padding-right: 40px; }
+  .input-wrap select:disabled { opacity: 0.5; cursor: not-allowed; }
   .pw-toggle { position: absolute; right: 16px; bottom: 16px; cursor: pointer; font-size: 16px; color: var(--muted); user-select: none; }
 
+  /* ── OPTION CARDS (Add Society menu) ── */
+  .option-cards { display: flex; flex-direction: column; gap: 16px; margin-top: 8px; }
+  .option-card {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 20px;
+    padding: 24px 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .option-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,31,125,0.12); }
+  .option-card-icon { font-size: 36px; flex-shrink: 0; }
+  .option-card-body {}
+  .option-card-title { font-size: 17px; font-weight: 800; color: var(--navy); margin-bottom: 4px; }
+  .option-card-sub   { font-size: 13px; color: var(--muted); font-weight: 500; line-height: 1.5; }
+
+  /* ── NM TOGGLE TABS ── */
+  .nm-toggle { display: flex; background: var(--surface2); border: 2px solid var(--border); border-radius: 14px; padding: 4px; margin-bottom: 16px; gap: 4px; }
+  .nm-tab {
+    flex: 1; padding: 10px; text-align: center;
+    font-size: 13px; font-weight: 700; border-radius: 10px;
+    cursor: pointer; transition: all 0.2s; color: var(--muted);
+  }
+  .nm-tab.active { background: var(--accent); color: #fff; }
+
+  /* ── NM SOCIETY LIST ── */
+  .nm-society-item {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+  }
+  .nm-society-name    { font-size: 14px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+  .nm-society-meta    { font-size: 12px; color: var(--muted); font-weight: 500; display: flex; flex-wrap: wrap; gap: 8px; }
+  .nm-society-type    { display: inline-block; font-size: 10px; font-weight: 700; background: var(--navy); color: #fff; border-radius: 6px; padding: 2px 8px; }
+  .nm-society-address { font-size: 11px; color: var(--muted); margin-top: 4px; font-weight: 500; }
+  .nm-count-pill      { background: rgba(255,31,125,0.1); color: var(--accent); border: 1.5px solid rgba(255,31,125,0.25); border-radius: 20px; font-size: 12px; font-weight: 800; padding: 4px 12px; display: inline-block; margin-bottom: 14px; }
+
   /* ── SOCIETY SEARCH DROPDOWN ── */
-  /* Shows top 20 results as a scrollable list below the search input */
   .society-search-wrap { margin-bottom: 14px; position: relative; }
   .society-search-wrap label { display: block; font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
   .society-search-input {
@@ -179,32 +179,17 @@
   .society-search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,31,125,0.1); }
   .society-search-input::placeholder { color: var(--muted); font-weight: 500; }
   .society-results-list {
-    background: var(--surface);
-    border: 2px solid var(--border);
-    border-radius: var(--radius);
-    margin-top: 6px;
-    max-height: 260px;
-    overflow-y: auto;
-    display: none; /* shown when user types */
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: var(--radius); margin-top: 6px; max-height: 260px;
+    overflow-y: auto; display: none;
   }
   .society-results-list.visible { display: block; }
-  .society-result-item {
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--border);
-    cursor: pointer;
-    transition: background 0.15s;
-    font-size: 14px; font-weight: 600; color: var(--navy);
-  }
+  .society-result-item { padding: 13px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.15s; font-size: 14px; font-weight: 600; color: var(--navy); }
   .society-result-item:last-child { border-bottom: none; }
   .society-result-item:hover { background: var(--surface2); }
-  .society-result-item.selected { background: #FFF0F6; color: var(--accent); }
   .society-result-sector { font-size: 11px; color: var(--muted); font-weight: 500; margin-top: 2px; }
   .society-result-count { font-size: 11px; color: var(--muted); font-weight: 600; text-align: center; padding: 8px; }
-  .selected-society-badge {
-    background: var(--surface2); border: 2px solid var(--accent);
-    border-radius: 12px; padding: 12px 16px; margin-bottom: 14px;
-    font-size: 14px; font-weight: 700; color: var(--navy); display: none;
-  }
+  .selected-society-badge { background: var(--surface2); border: 2px solid var(--accent); border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; font-size: 14px; font-weight: 700; color: var(--navy); display: none; }
   .selected-society-badge span { color: var(--accent); }
 
   /* ── BUTTONS ── */
@@ -221,30 +206,35 @@
   .btn-link { background: none; border: none; color: var(--accent); font-family: 'Nunito', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; padding: 8px 0; text-decoration: underline; }
 
   /* ── MESSAGES ── */
-  .error-msg { background: #FFF0F5; border: 1.5px solid rgba(255,31,125,0.3); color: var(--error); border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
+  .error-msg   { background: #FFF0F5; border: 1.5px solid rgba(255,31,125,0.3); color: var(--error); border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
   .success-msg { background: rgba(0,196,140,0.08); border: 1.5px solid rgba(0,196,140,0.3); color: #00966A; border-radius: 12px; padding: 12px 16px; font-size: 13px; font-weight: 600; margin-bottom: 16px; display: none; }
-  .info-box { background: var(--surface2); border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 14px; font-weight: 600; color: var(--navy2); margin-bottom: 20px; line-height: 1.6; }
+  .info-box    { background: var(--surface2); border: 1.5px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 14px; font-weight: 600; color: var(--navy2); margin-bottom: 20px; line-height: 1.6; }
+
+  /* ── MANUAL GPS BOX ── */
+  .manual-gps-box {
+    background: var(--surface2);
+    border: 1.5px dashed var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    margin-top: 16px;
+  }
+  .manual-gps-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+  .manual-gps-row { display: flex; gap: 10px; }
+  .manual-gps-row input {
+    flex: 1; background: var(--surface); border: 2px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; color: var(--text);
+    font-family: 'Nunito', sans-serif; font-size: 14px; font-weight: 600;
+    outline: none; transition: border-color 0.2s; -webkit-appearance: none;
+  }
+  .manual-gps-row input:focus { border-color: var(--accent); }
+  .manual-gps-row input::placeholder { color: var(--muted); font-weight: 500; font-size: 13px; }
+  .btn-manual { background: var(--navy); color: #fff; border: none; border-radius: 12px; padding: 12px 16px; font-family: 'Nunito', sans-serif; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: background 0.2s; flex-shrink: 0; }
+  .btn-manual:hover { background: var(--navy2); }
 
   /* ── CONFIRM MODAL ── */
-  /* Overlay for WhatsApp send confirmation */
-  .modal-overlay {
-    position: fixed; inset: 0;
-    background: rgba(30,27,75,0.5);
-    z-index: 200;
-    display: none;
-    align-items: flex-end;
-    justify-content: center;
-    padding: 20px;
-  }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(30,27,75,0.5); z-index: 200; display: none; align-items: flex-end; justify-content: center; padding: 20px; }
   .modal-overlay.visible { display: flex; }
-  .modal-card {
-    background: var(--surface);
-    border-radius: 24px 24px 16px 16px;
-    padding: 28px 24px;
-    width: 100%;
-    max-width: 440px;
-    animation: slideUp 0.25s ease;
-  }
+  .modal-card { background: var(--surface); border-radius: 24px 24px 16px 16px; padding: 28px 24px; width: 100%; max-width: 440px; animation: slideUp 0.25s ease; }
   @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
   .modal-title { font-size: 18px; font-weight: 800; color: var(--navy); margin-bottom: 8px; }
   .modal-sub   { font-size: 14px; color: var(--muted); font-weight: 500; margin-bottom: 24px; line-height: 1.5; }
@@ -289,7 +279,7 @@
   .s-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; padding-right: 52px; color: var(--navy); }
   .s-meta { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; font-weight: 600; }
   .s-dist { position: absolute; top: 14px; right: 14px; font-size: 11px; font-weight: 800; color: var(--accent); background: rgba(255,31,125,0.1); padding: 3px 9px; border-radius: 8px; }
-  .s-tier { display: inline-block; font-size: 10px; font-weight: 700; background: var(--navy); color: #fff; border-radius: 6px; padding: 2px 8px; margin-top: 6px; }
+  .s-nm   { display: inline-block; font-size: 10px; font-weight: 700; background: var(--navy); color: #fff; border-radius: 6px; padding: 2px 8px; margin-top: 6px; }
 
   /* ── BLAST ── */
   .blast-preview { background: var(--surface); border: 2px solid var(--border); border-radius: 20px; padding: 20px; margin-bottom: 16px; font-size: 14px; line-height: 1.8; font-weight: 600; color: var(--navy); white-space: pre-wrap; word-break: break-word; }
@@ -409,11 +399,66 @@
     <div class="home-greeting-code" id="homeAgentCode"></div>
     <div class="home-greeting-sub">What would you like to do today?</div>
   </div>
-  <!-- Feature cards injected by renderHomeCards() — only shows features agent has access to -->
   <div class="home-grid" id="homeGrid"></div>
   <div class="home-logout">
     <button class="btn-link" onclick="logout()">Sign out</button>
   </div>
+</div>
+
+
+<!-- ════════════════ SCREEN: ADD SOCIETY MENU ════════════════ -->
+<div class="screen" id="screen-society-menu">
+  <div class="big-label">Add Society</div>
+  <div class="big-title">What would you like to do?</div>
+  <p class="sub">Choose an option below to get started.</p>
+  <div class="option-cards">
+    <div class="option-card" onclick="navigate('screen-nm-list')">
+      <div class="option-card-icon">🗺️</div>
+      <div class="option-card-body">
+        <div class="option-card-title">NM Society List</div>
+        <div class="option-card-sub">Browse all societies in a Nano Market. Filter by city and NM to see what's already in the database.</div>
+      </div>
+    </div>
+    <div class="option-card" onclick="startAddSociety()">
+      <div class="option-card-icon">📍</div>
+      <div class="option-card-body">
+        <div class="option-card-title">Add Society</div>
+        <div class="option-card-sub">Stand at a society gate, get your GPS location, and submit a new or existing society visit.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ════════════════ SCREEN: NM SOCIETY LIST ════════════════ -->
+<div class="screen" id="screen-nm-list">
+  <div class="big-label">NM Society List</div>
+  <div class="big-title">Browse by NM</div>
+  <p class="sub">Select a city and Nano Market to see all societies in that area.</p>
+
+  <div class="input-wrap">
+    <label>City</label>
+    <select id="nmCitySelect" onchange="onNMCityChange()">
+      <option value="">— Select City —</option>
+    </select>
+  </div>
+
+  <div class="input-wrap">
+    <label>Nano Market</label>
+    <select id="nmSelect" onchange="onNMChange()" disabled>
+      <option value="">— Select NM —</option>
+    </select>
+  </div>
+
+  <!-- Live NM / Future NM toggle — shown after NM is selected -->
+  <div id="nmToggleWrap" style="display:none">
+    <div class="nm-toggle">
+      <div class="nm-tab active" id="tabLive"   onclick="switchNMTab('live')">Live NM</div>
+      <div class="nm-tab"        id="tabFuture" onclick="switchNMTab('future')">Future NM</div>
+    </div>
+  </div>
+
+  <div id="nmListContent"></div>
 </div>
 
 
@@ -430,9 +475,18 @@
     <div class="gps-status" id="gpsStatus">Ready to detect location</div>
     <div id="coordDisplay" class="coord-display" style="display:none"></div>
   </div>
-
   <div id="gpsError" class="error-msg"></div>
   <button class="btn btn-primary" id="gpsBtn" onclick="getLocation()">📍 Get My Location</button>
+
+  <!-- Manual GPS — for testing -->
+  <div class="manual-gps-box">
+    <div class="manual-gps-label">🧪 Manual GPS (Testing Only)</div>
+    <div class="manual-gps-row">
+      <input type="number" id="manualLat" placeholder="Latitude" step="any" />
+      <input type="number" id="manualLon" placeholder="Longitude" step="any" />
+      <button class="btn-manual" onclick="useManualGPS()">Set</button>
+    </div>
+  </div>
 </div>
 
 
@@ -451,10 +505,8 @@
     <div class="input-wrap">
       <textarea id="existingNotes" placeholder="Notes (optional) — gate type, RWA contact, etc."></textarea>
     </div>
-    <!-- Submit button disabled after first tap to prevent duplicate submissions -->
     <button class="btn btn-primary" id="submitMatchBtn" onclick="submitMatch()">✓ Confirm This Society</button>
   </div>
-  <!-- Always visible — agent can add a new society at any time -->
   <div id="addNewSection" style="margin-top:12px">
     <button class="btn btn-secondary" style="margin-top:0" onclick="showNewForm()">➕ This society is not listed — add new</button>
   </div>
@@ -466,6 +518,10 @@
     </div>
     <div class="input-wrap">
       <input type="number" id="newFlatCount" placeholder="Approx. number of flats" min="1" />
+    </div>
+    <div class="input-wrap">
+      <label>Nano Market</label>
+      <input type="text" id="newNM" placeholder="Nano Market name (if known)" />
     </div>
     <div class="input-wrap">
       <textarea id="newNotes" placeholder="Notes (optional) — gate type, RWA contact, etc."></textarea>
@@ -481,8 +537,6 @@
   <div class="big-title">Send Your Link</div>
   <p class="sub">Search for the society you are at. Your unique link will be added automatically.</p>
   <div id="blastError" class="error-msg"></div>
-
-  <!-- Search-as-you-type society selector — shows top 20 results -->
   <div class="society-search-wrap">
     <label>Search Society</label>
     <input type="text" class="society-search-input" id="blastSearchInput"
@@ -491,12 +545,9 @@
       autocomplete="off" />
     <div class="society-results-list" id="blastResultsList"></div>
   </div>
-
-  <!-- Shows which society has been selected -->
   <div class="selected-society-badge" id="blastSelectedBadge">
     Selected: <span id="blastSelectedName"></span>
   </div>
-
   <button class="btn btn-primary" id="generateBtn" onclick="generateBlast()">Generate Message →</button>
 </div>
 
@@ -510,10 +561,10 @@
     <div class="blast-meta-row"><span>Agent</span><span id="previewAgentName">—</span></div>
     <div class="blast-meta-row"><span>Agent Code</span><span id="previewAgentCode">—</span></div>
     <div class="blast-meta-row"><span>Society</span><span id="previewSociety">—</span></div>
+    <div class="blast-meta-row"><span>NM</span><span id="previewNM">—</span></div>
     <div class="blast-meta-row"><span>Tracking Link</span><span id="previewLink" class="blast-link">—</span></div>
   </div>
   <div class="blast-preview" id="blastMessagePreview"></div>
-  <!-- Opens confirmation modal instead of WhatsApp directly -->
   <button class="btn btn-whatsapp" onclick="openConfirmModal()">📲 Send via WhatsApp</button>
 </div>
 
@@ -558,13 +609,9 @@ const CONFIG = {
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
   TRACKING_BASE:   'https://play.google.com/store/apps/details?id=com.snabbit.customer',
-  MAX_SEARCH_RESULTS: 20, // Max societies shown in search dropdown
+  MAX_SEARCH_RESULTS: 20,
 };
 
-// ─────────────────────────────────────────────────────────
-// WHATSAPP MESSAGE TEMPLATE
-// Placeholders: {{SOCIETY}}, {{LINK}}, {{AGENT_NAME}}
-// ─────────────────────────────────────────────────────────
 const WHATSAPP_TEMPLATE = `Hi neighbour!
 
 We are organising exciting activities and exclusive benefits for residents of {{SOCIETY}}.
@@ -589,13 +636,14 @@ let state = {
   societyAccess:   false,
   userLat:         null,
   userLon:         null,
-  database:        [],
+  database:        [],   // full parsed DB rows
   dbLoaded:        false,
-  allSocieties:    [],
+  allSocieties:    [],   // deduplicated for blast search
   selectedSociety: null,
   blastSociety:    '',
-  // Navigation history stack — used by back button
+  blastSocietyNM:  '',
   screenHistory:   [],
+  nmTab:           'live', // 'live' or 'future'
 };
 
 
@@ -617,16 +665,13 @@ function clearSession() { localStorage.removeItem('snabbit_session'); }
 
 
 // ─────────────────────────────────────────────────────────
-// NAVIGATION — with history stack for back button
-// Screens that should NOT show a back button
+// NAVIGATION
 // ─────────────────────────────────────────────────────────
 const NO_BACK_SCREENS = ['screen-login', 'screen-home'];
 
 function navigate(screenId) {
   const current = document.querySelector('.screen.active')?.id;
-  if (current && current !== screenId) {
-    state.screenHistory.push(current);
-  }
+  if (current && current !== screenId) state.screenHistory.push(current);
   showScreen(screenId);
 }
 
@@ -634,11 +679,10 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo(0, 0);
-  // Show/hide back button
   const backBtn = document.getElementById('backBtn');
   if (NO_BACK_SCREENS.includes(id)) {
     backBtn.classList.remove('visible');
-    state.screenHistory = []; // clear history at root screens
+    state.screenHistory = [];
   } else {
     backBtn.classList.add('visible');
   }
@@ -648,13 +692,9 @@ function goBack() {
   if (state.screenHistory.length > 0) {
     const prev = state.screenHistory.pop();
     showScreen(prev);
-    // Re-add back button visibility based on popped screen
     const backBtn = document.getElementById('backBtn');
-    if (NO_BACK_SCREENS.includes(prev)) {
-      backBtn.classList.remove('visible');
-    } else {
-      backBtn.classList.add('visible');
-    }
+    if (NO_BACK_SCREENS.includes(prev)) backBtn.classList.remove('visible');
+    else backBtn.classList.add('visible');
   } else {
     navigate('screen-home');
   }
@@ -701,12 +741,13 @@ async function postToScript(payload) {
 }
 
 function toBoolean(val) {
+  if (typeof val === 'boolean') return val;
   return ['true','1','yes'].includes(String(val).toLowerCase().trim());
 }
 
 
 // ─────────────────────────────────────────────────────────
-// CREDENTIALS
+// CREDENTIALS — gviz read
 // Columns: S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access
 // ─────────────────────────────────────────────────────────
 async function loadCreds() {
@@ -743,8 +784,8 @@ async function doLogin() {
   try {
     const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
-      r[uIdx]?.toLowerCase().trim() === username.toLowerCase() &&
-      r[pIdx]?.trim() === password && toBoolean(r[aIdx])
+      String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
+      String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
     );
     if (!match) {
       showError('loginError', 'Invalid username or password. Please try again.');
@@ -763,18 +804,15 @@ async function doLogin() {
 }
 
 function onLoggedIn() {
-  // Show agent name + code in header badge and home screen
   const badge = document.getElementById('agentBadge');
   badge.style.display = 'block';
   badge.textContent   = state.agentName.split(' ')[0] + ' · Logout';
   document.getElementById('homeAgentName').textContent = state.agentName;
   document.getElementById('homeAgentCode').textContent = 'Code: ' + state.agentCode;
-  // Reset login form
   document.getElementById('loginBtn').disabled    = false;
   document.getElementById('loginBtn').textContent = 'Sign In →';
   document.getElementById('loginUsername').value  = '';
   document.getElementById('loginPassword').value  = '';
-  // Render only accessible feature cards
   renderHomeCards();
   loadDatabase();
   navigate('screen-home');
@@ -782,7 +820,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', blastAccess:false, societyAccess:false, userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', screenHistory:[] };
+  state = { agentName:'', agentCode:'', blastAccess:false, societyAccess:false, userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live' };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -793,12 +831,10 @@ document.getElementById('loginUsername').addEventListener('keydown', e => { if (
 
 // ─────────────────────────────────────────────────────────
 // HOME CARDS
-// Only renders cards for features the agent has access to.
-// If agent has no access to a feature, the card is not shown at all.
 // ─────────────────────────────────────────────────────────
 function renderHomeCards() {
   const cards = [
-    { icon:'🏘️', title:'Add Society',    sub:'Visit & record a society near you',  access: state.societyAccess, action:'startAddSociety()' },
+    { icon:'🏘️', title:'Add Society',    sub:'Visit & record a society near you',  access: state.societyAccess, action:'openSocietyMenu()' },
     { icon:'📲', title:'WhatsApp Blast', sub:'Send your unique invite link',         access: state.blastAccess,   action:'startWhatsappBlast()' },
   ];
   const accessible = cards.filter(c => c.access);
@@ -807,7 +843,6 @@ function renderHomeCards() {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:var(--muted);font-size:14px;font-weight:600;padding:20px 0">No features available. Contact your admin.</div>`;
     return;
   }
-  // If only 1 card, make it full width
   if (accessible.length === 1) grid.style.gridTemplateColumns = '1fr';
   else grid.style.gridTemplateColumns = '1fr 1fr';
   grid.innerHTML = accessible.map(c => `
@@ -817,6 +852,14 @@ function renderHomeCards() {
       <div class="home-card-sub">${c.sub}</div>
     </div>
   `).join('');
+}
+
+
+// ─────────────────────────────────────────────────────────
+// SOCIETY MENU
+// ─────────────────────────────────────────────────────────
+function openSocietyMenu() {
+  navigate('screen-society-menu');
 }
 
 
@@ -837,8 +880,8 @@ async function doChangePassword() {
   try {
     const { rows, headerIdx, uIdx, pIdx, aIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
-      r[uIdx]?.toLowerCase().trim() === username.toLowerCase() &&
-      r[pIdx]?.trim() === oldPw && toBoolean(r[aIdx])
+      String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
+      String(r[pIdx]||'').trim() === oldPw && toBoolean(r[aIdx])
     );
     if (!match) { showError('cpError', 'Username or current password is incorrect.'); btn.disabled = false; btn.textContent = 'Update Password'; return; }
     await postToScript({ action: 'changePassword', username, newPassword: newPw, sheetId: CONFIG.CREDS_SHEET_ID });
@@ -852,24 +895,155 @@ async function doChangePassword() {
 
 
 // ─────────────────────────────────────────────────────────
-// DATABASE
+// DATABASE — updated to new column schema
+// Columns: name, building_type, Live NM, Future NM, NM Status,
+//          MM Name, MM Status, Area, City, address, pincode,
+//          latitude, longitude, place_id, rating, total_ratings
 // ─────────────────────────────────────────────────────────
 async function loadDatabase() {
   if (state.dbLoaded) return;
-  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Clean+Residential+DB`;
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.DB_SHEET_ID}/gviz/tq?tqx=out:csv`;
   try {
-    const res = await fetch(url), text = await res.text();
+    const res  = await fetch(url);
+    const text = await res.text();
     const rows = parseCSV(text);
-    const headerIdx = rows.findIndex(r => r.includes('Name') && r.includes('Latitude'));
-    if (headerIdx === -1) return;
-    const h = rows[headerIdx], col = k => h.indexOf(k);
+
+    // Find header row — look for 'name' and 'latitude' columns
+    const headerIdx = rows.findIndex(r =>
+      r.some(c => c.toLowerCase() === 'name') &&
+      r.some(c => c.toLowerCase() === 'latitude')
+    );
+    if (headerIdx === -1) { console.error('DB header not found'); return; }
+
+    const h   = rows[headerIdx].map(c => c.toLowerCase().trim());
+    const col = k => h.findIndex(c => c === k.toLowerCase());
+
+    const iName    = col('name');
+    const iLat     = col('latitude');
+    const iLon     = col('longitude');
+    const iType    = col('building_type');
+    const iLiveNM  = col('live nm');
+    const iFutNM   = col('future nm');
+    const iNMStat  = col('nm status');
+    const iArea    = col('area');
+    const iCity    = col('city');
+    const iAddr    = col('address');
+
     state.database = rows.slice(headerIdx + 1)
-      .filter(r => r[col('Latitude')] && !isNaN(parseFloat(r[col('Latitude')])))
-      .map(r => ({ name: r[col('Name')]||'', lat: parseFloat(r[col('Latitude')]), lon: parseFloat(r[col('Longitude')]), tier: r[col('Snabbit Tier')]||'', sector: r[col('Sector')]||'', score: r[col('Snabbit Score')]||'' }));
+      .filter(r => r[iLat] && !isNaN(parseFloat(r[iLat])))
+      .map(r => ({
+        name:     (r[iName]   || '').trim(),
+        lat:      parseFloat(r[iLat]),
+        lon:      parseFloat(r[iLon]),
+        type:     (r[iType]   || '').trim(),
+        liveNM:   (r[iLiveNM] || '').trim(),
+        futureNM: (r[iFutNM]  || '').trim(),
+        nmStatus: (r[iNMStat] || '').trim(),
+        area:     (r[iArea]   || '').trim(),
+        city:     (r[iCity]   || '').trim(),
+        address:  (r[iAddr]   || '').trim(),
+      }));
+
+    // Deduplicated list for blast search
     const seen = new Set();
-    state.allSocieties = state.database.filter(s => s.name && !seen.has(s.name) && seen.add(s.name)).sort((a,b) => a.name.localeCompare(b.name));
+    state.allSocieties = state.database
+      .filter(s => s.name && !seen.has(s.name) && seen.add(s.name))
+      .sort((a,b) => a.name.localeCompare(b.name));
+
+    // Populate city dropdown
+    populateCityDropdown();
+
     state.dbLoaded = true;
+    console.log(`DB loaded: ${state.database.length} records`);
   } catch(e) { console.error('Database load error:', e); }
+}
+
+
+// ─────────────────────────────────────────────────────────
+// NM SOCIETY LIST — city + NM filter
+// ─────────────────────────────────────────────────────────
+function populateCityDropdown() {
+  const cities = [...new Set(state.database.map(s => s.city).filter(Boolean))].sort();
+  const sel    = document.getElementById('nmCitySelect');
+  sel.innerHTML = '<option value="">— Select City —</option>' +
+    cities.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function onNMCityChange() {
+  const city   = document.getElementById('nmCitySelect').value;
+  const nmSel  = document.getElementById('nmSelect');
+  const toggle = document.getElementById('nmToggleWrap');
+  document.getElementById('nmListContent').innerHTML = '';
+  toggle.style.display = 'none';
+  nmSel.innerHTML = '<option value="">— Select NM —</option>';
+
+  if (!city) { nmSel.disabled = true; return; }
+
+  // Collect all unique Live NM + Future NM values for this city
+  const nmSet = new Set();
+  state.database
+    .filter(s => s.city === city)
+    .forEach(s => {
+      if (s.liveNM)   nmSet.add(s.liveNM);
+      if (s.futureNM) nmSet.add(s.futureNM);
+    });
+
+  const nms = [...nmSet].sort();
+  nmSel.innerHTML = '<option value="">— Select NM —</option>' +
+    nms.map(n => `<option value="${n}">${n}</option>`).join('');
+  nmSel.disabled = false;
+}
+
+function onNMChange() {
+  const city = document.getElementById('nmCitySelect').value;
+  const nm   = document.getElementById('nmSelect').value;
+  const toggle = document.getElementById('nmToggleWrap');
+
+  if (!nm) { document.getElementById('nmListContent').innerHTML = ''; toggle.style.display = 'none'; return; }
+
+  toggle.style.display = 'block';
+  state.nmTab = 'live';
+  document.getElementById('tabLive').classList.add('active');
+  document.getElementById('tabFuture').classList.remove('active');
+  renderNMList(city, nm, 'live');
+}
+
+function switchNMTab(tab) {
+  state.nmTab = tab;
+  document.getElementById('tabLive').classList.toggle('active',   tab === 'live');
+  document.getElementById('tabFuture').classList.toggle('active', tab === 'future');
+  const city = document.getElementById('nmCitySelect').value;
+  const nm   = document.getElementById('nmSelect').value;
+  renderNMList(city, nm, tab);
+}
+
+function renderNMList(city, nm, tab) {
+  const content = document.getElementById('nmListContent');
+
+  const filtered = state.database.filter(s =>
+    s.city === city &&
+    (tab === 'live' ? s.liveNM === nm : s.futureNM === nm)
+  );
+
+  if (filtered.length === 0) {
+    content.innerHTML = `<div class="info-box">No societies found in this NM for the selected tab.</div>`;
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="nm-count-pill">${filtered.length} societ${filtered.length === 1 ? 'y' : 'ies'}</div>
+    ${filtered.map(s => `
+      <div class="nm-society-item">
+        <div class="nm-society-name">${s.name}</div>
+        <div class="nm-society-meta">
+          ${s.type ? `<span class="nm-society-type">${s.type}</span>` : ''}
+          ${s.area ? `<span>📍 ${s.area}</span>` : ''}
+          ${s.liveNM && tab === 'future' ? `<span>Live NM: ${s.liveNM || '—'}</span>` : ''}
+        </div>
+        ${s.address ? `<div class="nm-society-address">${s.address}</div>` : ''}
+      </div>
+    `).join('')}
+  `;
 }
 
 
@@ -881,6 +1055,8 @@ function startAddSociety() {
   document.getElementById('gpsIcon').classList.remove('pulsing');
   document.getElementById('gpsStatus').textContent = 'Ready to detect location';
   document.getElementById('coordDisplay').style.display = 'none';
+  document.getElementById('manualLat').value = '';
+  document.getElementById('manualLon').value = '';
   hideMsg('gpsError');
   const btn = document.getElementById('gpsBtn');
   btn.textContent = '📍 Get My Location'; btn.onclick = getLocation; btn.disabled = false;
@@ -892,13 +1068,13 @@ function getLocation() {
   hideMsg('gpsError');
   btn.disabled = true; btn.textContent = 'Detecting…';
   icon.classList.add('pulsing'); stat.textContent = 'Getting your location…';
-  if (!navigator.geolocation) { alert('Geolocation not supported on this browser.'); return; }
+  if (!navigator.geolocation) { showError('gpsError', 'Geolocation not supported on this browser.'); btn.disabled = false; btn.textContent = '📍 Get My Location'; return; }
   navigator.geolocation.getCurrentPosition(
     pos => {
       state.userLat = pos.coords.latitude; state.userLon = pos.coords.longitude;
       const accuracy = Math.round(pos.coords.accuracy);
-      icon.classList.remove('pulsing'); icon.textContent = '✅';
-      stat.textContent = 'Location captured!';
+      icon.classList.remove('pulsing'); icon.textContent = accuracy <= 50 ? '✅' : '⚠️';
+      stat.textContent = accuracy <= 50 ? 'Location captured!' : `Location captured (accuracy: ±${accuracy}m — weak signal)`;
       const cd = document.getElementById('coordDisplay');
       cd.style.display = 'block';
       cd.textContent = `${state.userLat.toFixed(6)}, ${state.userLon.toFixed(6)}  ±${accuracy}m`;
@@ -918,6 +1094,7 @@ function getLocation() {
   );
 }
 
+// Manual GPS — for testing
 function useManualGPS() {
   const lat = parseFloat(document.getElementById('manualLat').value);
   const lon = parseFloat(document.getElementById('manualLon').value);
@@ -926,9 +1103,11 @@ function useManualGPS() {
   if (lon < -180 || lon > 180)   { alert('Longitude must be between -180 and 180.'); return; }
   state.userLat = lat;
   state.userLon = lon;
-  document.getElementById('gpsIcon').classList.remove('pulsing');
-  document.getElementById('gpsIcon').textContent   = '📍';
-  document.getElementById('gpsStatus').textContent = 'Manual location set';
+  const icon = document.getElementById('gpsIcon');
+  const stat = document.getElementById('gpsStatus');
+  icon.classList.remove('pulsing');
+  icon.textContent   = '🧪';
+  stat.textContent   = 'Manual coordinates set (testing)';
   const cd = document.getElementById('coordDisplay');
   cd.style.display = 'block';
   cd.textContent   = `${lat.toFixed(6)}, ${lon.toFixed(6)}  (manual)`;
@@ -943,6 +1122,7 @@ async function searchNearby() {
   state.selectedSociety = null;
   document.getElementById('confirmMatchForm').style.display = 'none';
   document.getElementById('newSocietyForm').style.display   = 'none';
+  document.getElementById('addNewSection').style.display    = 'block';
   const content = document.getElementById('resultsContent');
   content.innerHTML = '<div class="loading"><div class="spinner"></div> Searching…</div>';
   if (!state.dbLoaded) await loadDatabase();
@@ -959,6 +1139,7 @@ function renderResults(nearby) {
   if (nearby.length === 0) {
     content.innerHTML = `<div class="info-box">📭 No societies found within ${CONFIG.RADIUS_M}m. This looks like a new entry — please add it below.</div>`;
     document.getElementById('newSocietyForm').style.display = 'block';
+    document.getElementById('addNewSection').style.display  = 'none';
     return;
   }
   content.innerHTML = `
@@ -971,7 +1152,11 @@ function renderResults(nearby) {
       <div class="society-card" id="card-${i}" onclick="selectSociety(${i})">
         <div class="s-dist">${Math.round(s.dist)}m</div>
         <div class="s-name">${s.name}</div>
-        <div class="s-meta"><span>📍 Sector ${s.sector}</span></div>
+        <div class="s-meta">
+          ${s.area ? `<span>📍 ${s.area}</span>` : ''}
+          ${s.city ? `<span>${s.city}</span>` : ''}
+        </div>
+        ${s.liveNM ? `<span class="s-nm">NM: ${s.liveNM}</span>` : ''}
       </div>
     `).join('')}
   `;
@@ -1000,35 +1185,24 @@ function showNewForm() {
   document.getElementById('submitNewBtn').textContent = 'Submit New Society';
   document.getElementById('newSocietyName').value = '';
   document.getElementById('newFlatCount').value = '';
+  document.getElementById('newNM').value = '';
   document.getElementById('newNotes').value = '';
   document.getElementById('newSocietyForm').scrollIntoView({ behavior: 'smooth' });
 }
 
-// ─────────────────────────────────────────────────────────
-// SUBMISSION SHEET CHECK
-// Fetches the submission sheet and checks if a society name
-// has already been submitted before (exact match).
-// Returns true if already submitted, false if first time.
-// ─────────────────────────────────────────────────────────
 async function checkIfAlreadySubmitted(societyName) {
   try {
     const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.SUBMIT_SHEET_ID}/gviz/tq?tqx=out:csv`;
     const res  = await fetch(url);
     const text = await res.text();
     const rows = parseCSV(text);
-    // Find Society Name column
     const headerIdx = rows.findIndex(r => r.some(c => c.toLowerCase().includes('society')));
     if (headerIdx === -1) return false;
-    const h       = rows[headerIdx].map(c => c.toLowerCase().trim());
-    const socIdx  = h.findIndex(c => c.includes('society'));
+    const h      = rows[headerIdx].map(c => c.toLowerCase().trim());
+    const socIdx = h.findIndex(c => c.includes('society'));
     if (socIdx === -1) return false;
-    // Check if exact society name exists in any data row
     return rows.slice(headerIdx + 1).some(r => r[socIdx]?.trim() === societyName.trim());
-  } catch(e) {
-    // If check fails, default to false (treat as new) so submission isn't blocked
-    console.error('Submission check error:', e);
-    return false;
-  }
+  } catch(e) { console.error('Submission check error:', e); return false; }
 }
 
 async function submitMatch() {
@@ -1039,54 +1213,58 @@ async function submitMatch() {
   const societyName    = state.selectedSociety.name;
   const alreadySub     = await checkIfAlreadySubmitted(societyName);
   const isNew          = alreadySub ? 'No' : 'Yes';
-  const partOfDatabase = 'Yes';
   btn.textContent = 'Submitting…';
   await postToScript({
     action: 'submitSociety',
-    timestamp: new Date().toISOString(),
-    agentName: state.agentName,
+    timestamp:      new Date().toISOString(),
+    agentName:      state.agentName,
+    agentCode:      state.agentCode,
     societyName,
-    latitude:  state.userLat,
-    longitude: state.userLon,
-    flatCount: flatCount || 'Not updated',
+    latitude:       state.userLat,
+    longitude:      state.userLon,
+    flatCount:      flatCount || 'Not updated',
     isNew,
-    partOfDatabase,
+    partOfDatabase: 'Yes',
+    nanoMarket:     state.selectedSociety.liveNM || '',
     notes,
   });
-  showSocietySuccess({ societyName, flatCount: flatCount || 'Not updated', isNew, partOfDatabase });
+  showSocietySuccess({ societyName, flatCount: flatCount || 'Not updated', isNew, partOfDatabase: 'Yes', nanoMarket: state.selectedSociety.liveNM || '—' });
 }
 
 async function submitNew() {
   const name  = document.getElementById('newSocietyName').value.trim();
   const flats = document.getElementById('newFlatCount').value.trim();
+  const nm    = document.getElementById('newNM').value.trim();
   const notes = document.getElementById('newNotes').value.trim();
   const btn   = document.getElementById('submitNewBtn');
   if (!name)  { alert('Please enter the society name.'); return; }
   if (!flats) { alert('Please enter the flat count.'); return; }
   btn.disabled = true; btn.textContent = 'Checking…';
-  const alreadySub     = await checkIfAlreadySubmitted(name);
-  const isNew          = alreadySub ? 'No' : 'Yes';
-  const partOfDatabase = 'No';
-  btn.textContent = 'Submitting…';
+  const alreadySub = await checkIfAlreadySubmitted(name);
+  const isNew      = alreadySub ? 'No' : 'Yes';
+  btn.textContent  = 'Submitting…';
   await postToScript({
     action: 'submitSociety',
-    timestamp: new Date().toISOString(),
-    agentName: state.agentName,
-    societyName: name,
-    latitude:  state.userLat,
-    longitude: state.userLon,
-    flatCount: flats,
+    timestamp:      new Date().toISOString(),
+    agentName:      state.agentName,
+    agentCode:      state.agentCode,
+    societyName:    name,
+    latitude:       state.userLat,
+    longitude:      state.userLon,
+    flatCount:      flats,
     isNew,
-    partOfDatabase,
+    partOfDatabase: 'No',
+    nanoMarket:     nm,
     notes,
   });
-  showSocietySuccess({ societyName: name, flatCount: flats, isNew, partOfDatabase });
+  showSocietySuccess({ societyName: name, flatCount: flats, isNew, partOfDatabase: 'No', nanoMarket: nm || '—' });
 }
 
 function showSocietySuccess(data) {
   document.getElementById('successDetail').innerHTML = `
     <div class="detail-row"><span>Society</span><span>${data.societyName}</span></div>
     <div class="detail-row"><span>Agent</span><span>${state.agentName}</span></div>
+    <div class="detail-row"><span>Nano Market</span><span>${data.nanoMarket}</span></div>
     <div class="detail-row"><span>Flats</span><span>${data.flatCount}</span></div>
     <div class="detail-row"><span>Is New</span><span>${data.isNew}</span></div>
     <div class="detail-row"><span>Part of Database</span><span>${data.partOfDatabase}</span></div>
@@ -1096,14 +1274,11 @@ function showSocietySuccess(data) {
 }
 
 function scanAnother() {
-  // Reset all form fields
-  ['newSocietyName','newFlatCount','newNotes','existingFlatCount','existingNotes'].forEach(id => document.getElementById(id).value = '');
-  // Reset all buttons to their original state
+  ['newSocietyName','newFlatCount','newNM','newNotes','existingFlatCount','existingNotes'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('submitMatchBtn').disabled    = false;
   document.getElementById('submitMatchBtn').textContent = '✓ Confirm This Society';
   document.getElementById('submitNewBtn').disabled      = false;
   document.getElementById('submitNewBtn').textContent   = 'Submit New Society';
-  // Hide forms and show add new button
   document.getElementById('confirmMatchForm').style.display = 'none';
   document.getElementById('newSocietyForm').style.display   = 'none';
   document.getElementById('addNewSection').style.display    = 'block';
@@ -1112,22 +1287,19 @@ function scanAnother() {
 
 
 // ─────────────────────────────────────────────────────────
-// WHATSAPP BLAST — SOCIETY SEARCH
-// Shows top 20 matching results as agent types.
-// Selecting a result sets state.blastSociety.
+// WHATSAPP BLAST
+// Search now shows NM alongside society name
 // ─────────────────────────────────────────────────────────
 async function startWhatsappBlast() {
   hideMsg('blastError');
-  // Reset search state
   document.getElementById('blastSearchInput').value = '';
   document.getElementById('blastResultsList').innerHTML = '';
   document.getElementById('blastResultsList').classList.remove('visible');
   document.getElementById('blastSelectedBadge').style.display = 'none';
   document.getElementById('blastSelectedName').textContent = '';
-  state.blastSociety = '';
-
+  state.blastSociety   = '';
+  state.blastSocietyNM = '';
   navigate('screen-blast');
-
   if (!state.dbLoaded) {
     document.getElementById('generateBtn').disabled    = true;
     document.getElementById('generateBtn').textContent = 'Loading societies…';
@@ -1138,116 +1310,100 @@ async function startWhatsappBlast() {
 }
 
 function onBlastSearch() {
-  const query   = document.getElementById('blastSearchInput').value.trim().toLowerCase();
-  const list    = document.getElementById('blastResultsList');
-  const badge   = document.getElementById('blastSelectedBadge');
-
-  // Clear selection if user changes search
-  state.blastSociety = '';
-  badge.style.display = 'none';
-
+  const query = document.getElementById('blastSearchInput').value.trim().toLowerCase();
+  const list  = document.getElementById('blastResultsList');
+  const badge = document.getElementById('blastSelectedBadge');
+  state.blastSociety   = '';
+  state.blastSocietyNM = '';
+  badge.style.display  = 'none';
   if (query.length < 2) { list.classList.remove('visible'); list.innerHTML = ''; return; }
-
   const matches = state.allSocieties.filter(s => s.name.toLowerCase().includes(query));
   const top     = matches.slice(0, CONFIG.MAX_SEARCH_RESULTS);
-
   if (top.length === 0) {
     list.innerHTML = `<div class="society-result-count">No results found</div>`;
     list.classList.add('visible');
     return;
   }
-
-  list.innerHTML = top.map((s, i) => `
-    <div class="society-result-item" onclick="selectBlastSociety('${s.name.replace(/'/g,"\\'")}', '${s.sector}')">
+  list.innerHTML = top.map(s => `
+    <div class="society-result-item" onclick="selectBlastSociety('${s.name.replace(/'/g,"\\'")}', '${(s.liveNM||'').replace(/'/g,"\\'")}')">
       ${s.name}
-      <div class="society-result-sector">Sector ${s.sector} · ${s.tier}</div>
+      <div class="society-result-sector">
+        ${s.liveNM ? `NM: ${s.liveNM}` : ''}
+        ${s.city   ? ` · ${s.city}`    : ''}
+      </div>
     </div>
   `).join('') + (matches.length > CONFIG.MAX_SEARCH_RESULTS
-    ? `<div class="society-result-count">Showing ${CONFIG.MAX_SEARCH_RESULTS} of ${matches.length} — type more to narrow down</div>`
+    ? `<div class="society-result-count">Showing ${CONFIG.MAX_SEARCH_RESULTS} of ${matches.length} — type more to narrow</div>`
     : '');
-
   list.classList.add('visible');
 }
 
-function selectBlastSociety(name, sector) {
-  state.blastSociety = name;
+function selectBlastSociety(name, nm) {
+  state.blastSociety   = name;
+  state.blastSocietyNM = nm;
   document.getElementById('blastSearchInput').value = name;
   document.getElementById('blastResultsList').classList.remove('visible');
   const badge = document.getElementById('blastSelectedBadge');
-  document.getElementById('blastSelectedName').textContent = `${name} (Sector ${sector})`;
+  document.getElementById('blastSelectedName').textContent = `${name}${nm ? ' · ' + nm : ''}`;
   badge.style.display = 'block';
 }
 
-// Hide search results if user taps outside
 document.addEventListener('click', e => {
   const list  = document.getElementById('blastResultsList');
   const input = document.getElementById('blastSearchInput');
-  if (list && input && !list.contains(e.target) && e.target !== input) {
-    list.classList.remove('visible');
-  }
+  if (list && input && !list.contains(e.target) && e.target !== input) list.classList.remove('visible');
 });
 
 function generateBlast() {
   hideMsg('blastError');
   if (!state.blastSociety) { showError('blastError', 'Please search and select a society first.'); return; }
   if (!state.agentCode)    { showError('blastError', 'Agent code not found. Please logout and login again.'); return; }
-
   const trackingLink = `${CONFIG.TRACKING_BASE}&ref=${encodeURIComponent(state.agentCode)}&soc=${CONFIG.SOCIETY_CODE}`;
   const message = WHATSAPP_TEMPLATE
     .replace('{{SOCIETY}}',    state.blastSociety)
     .replace('{{LINK}}',       trackingLink)
     .replace('{{AGENT_NAME}}', state.agentName);
-
-  document.getElementById('previewAgentName').textContent   = state.agentName;
-  document.getElementById('previewAgentCode').textContent   = state.agentCode;
-  document.getElementById('previewSociety').textContent     = state.blastSociety;
-  document.getElementById('previewLink').textContent        = trackingLink;
+  document.getElementById('previewAgentName').textContent    = state.agentName;
+  document.getElementById('previewAgentCode').textContent    = state.agentCode;
+  document.getElementById('previewSociety').textContent      = state.blastSociety;
+  document.getElementById('previewNM').textContent           = state.blastSocietyNM || '—';
+  document.getElementById('previewLink').textContent         = trackingLink;
   document.getElementById('blastMessagePreview').textContent = message;
-
   window._blastMessage      = message;
   window._blastTrackingLink = trackingLink;
-
   navigate('screen-blast-preview');
 }
 
 
 // ─────────────────────────────────────────────────────────
-// WHATSAPP SEND — CONFIRMATION MODAL
-// Shown before opening WhatsApp to prevent accidental sends
+// WHATSAPP CONFIRM MODAL
 // ─────────────────────────────────────────────────────────
 function openConfirmModal() {
   document.getElementById('modalSocietyName').textContent = state.blastSociety;
   document.getElementById('confirmModal').classList.add('visible');
 }
-
-function closeModal() {
-  document.getElementById('confirmModal').classList.remove('visible');
-}
+function closeModal() { document.getElementById('confirmModal').classList.remove('visible'); }
 
 async function confirmSendWhatsApp() {
   const btn = document.getElementById('modalConfirmBtn');
   btn.disabled = true; btn.textContent = 'Opening WhatsApp…';
   closeModal();
-
-  // Open WhatsApp with pre-filled message
   window.open(`https://wa.me/?text=${encodeURIComponent(window._blastMessage)}`, '_blank');
-
-  // Log blast to tracking sheet
   await postToScript({
     action: 'logBlast', timestamp: new Date().toISOString(),
     agentName: state.agentName, agentCode: state.agentCode,
-    society: state.blastSociety, trackingLink: window._blastTrackingLink,
+    society: state.blastSociety, nanoMarket: state.blastSocietyNM,
+    trackingLink: window._blastTrackingLink,
     sheetId: CONFIG.BLAST_SHEET_ID
   });
-
   document.getElementById('blastSuccessDetail').innerHTML = `
     <div class="detail-row"><span>Agent</span><span>${state.agentName}</span></div>
     <div class="detail-row"><span>Agent Code</span><span>${state.agentCode}</span></div>
     <div class="detail-row"><span>Society</span><span>${state.blastSociety}</span></div>
+    <div class="detail-row"><span>Nano Market</span><span>${state.blastSocietyNM || '—'}</span></div>
     <div class="detail-row"><span>Link</span><span>${window._blastTrackingLink}</span></div>
     <div class="detail-row"><span>Time</span><span>${new Date().toLocaleTimeString()}</span></div>
   `;
-
   btn.disabled = false; btn.textContent = '📲 Yes, Open WhatsApp';
   navigate('screen-blast-success');
 }
