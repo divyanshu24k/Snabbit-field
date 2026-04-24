@@ -144,14 +144,7 @@
   .option-card-title { font-size: 17px; font-weight: 800; color: var(--navy); margin-bottom: 4px; }
   .option-card-sub   { font-size: 13px; color: var(--muted); font-weight: 500; line-height: 1.5; }
 
-  /* ── NM TOGGLE TABS ── */
-  .nm-toggle { display: flex; background: var(--surface2); border: 2px solid var(--border); border-radius: 14px; padding: 4px; margin-bottom: 16px; gap: 4px; }
-  .nm-tab {
-    flex: 1; padding: 10px; text-align: center;
-    font-size: 13px; font-weight: 700; border-radius: 10px;
-    cursor: pointer; transition: all 0.2s; color: var(--muted);
-  }
-  .nm-tab.active { background: var(--accent); color: #fff; }
+
 
   /* ── NM SOCIETY LIST ── */
   .nm-society-item {
@@ -450,13 +443,7 @@
     </select>
   </div>
 
-  <!-- Live NM / Future NM toggle — shown after NM is selected -->
-  <div id="nmToggleWrap" style="display:none">
-    <div class="nm-toggle">
-      <div class="nm-tab active" id="tabLive"   onclick="switchNMTab('live')">Live NM</div>
-      <div class="nm-tab"        id="tabFuture" onclick="switchNMTab('future')">Future NM</div>
-    </div>
-  </div>
+  <!-- NM tabs removed — Live NM and Future NM both shown together -->
 
   <div id="nmListContent"></div>
 </div>
@@ -600,11 +587,11 @@
 // CONFIG
 // ─────────────────────────────────────────────────────────
 const CONFIG = {
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxu1n9vHXfLKg4fLwcmNqEmcapBabWJywN2UWxLj26vEBKqkpPB6HXH8k9ubDQ2xGXm0g/exec',
-  DB_SHEET_ID:     '1ZWfPa95bOhDnEhxTVahru6BpUsTijl9Po8vL2jpVK0A',
-  CREDS_SHEET_ID:  '1Q4GpTRZMj2bGg025n6cMNrIkm1D6XJBqOr-bm2J8qCY',
-  SUBMIT_SHEET_ID: '1GvCUiO1QclTwu7uwbkRVeswIxhpKPqdzVttir_CnSQU',
-  BLAST_SHEET_ID:  '1xMXKkS27fIfzMyMmUFdMiw99UQM6ZYZlcPHETwnPCVs',
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbx5VIKwqL1fvM4StfQZZy4uEljM7212dNf75uRkOtM9gdDWtOgsmyqsHyPe-c-T634gNA/exec',
+  DB_SHEET_ID:     '1kkbBU6ri1KgkV9fgkN6BYbWnPvar42CrzLN_llNfnjI',
+  CREDS_SHEET_ID:  '160K3dHzcX6bvSntjsWrjwIvnH9z0Pb6kogbCj26WbDs',
+  SUBMIT_SHEET_ID: '1V6FRXPtydfIxBaeX3z8DsJKsTg0DAnDG2inRN54o2tA',
+  BLAST_SHEET_ID:  '14VWQw0nj0asEJHM3hrkQzsq3MCA44L1RCZEM85obkg0',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
@@ -902,7 +889,7 @@ async function doChangePassword() {
 // ─────────────────────────────────────────────────────────
 async function loadDatabase() {
   if (state.dbLoaded) return;
-  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.DB_SHEET_ID}/gviz/tq?tqx=out:csv`;
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Clean+Residential+DB`;
   try {
     const res  = await fetch(url);
     const text = await res.text();
@@ -997,36 +984,20 @@ function onNMCityChange() {
 function onNMChange() {
   const city = document.getElementById('nmCitySelect').value;
   const nm   = document.getElementById('nmSelect').value;
-  const toggle = document.getElementById('nmToggleWrap');
-
-  if (!nm) { document.getElementById('nmListContent').innerHTML = ''; toggle.style.display = 'none'; return; }
-
-  toggle.style.display = 'block';
-  state.nmTab = 'live';
-  document.getElementById('tabLive').classList.add('active');
-  document.getElementById('tabFuture').classList.remove('active');
-  renderNMList(city, nm, 'live');
+  if (!nm) { document.getElementById('nmListContent').innerHTML = ''; return; }
+  renderNMList(city, nm);
 }
 
-function switchNMTab(tab) {
-  state.nmTab = tab;
-  document.getElementById('tabLive').classList.toggle('active',   tab === 'live');
-  document.getElementById('tabFuture').classList.toggle('active', tab === 'future');
-  const city = document.getElementById('nmCitySelect').value;
-  const nm   = document.getElementById('nmSelect').value;
-  renderNMList(city, nm, tab);
-}
-
-function renderNMList(city, nm, tab) {
+function renderNMList(city, nm) {
   const content = document.getElementById('nmListContent');
 
+  // Show societies where this NM appears in either Live NM or Future NM
   const filtered = state.database.filter(s =>
-    s.city === city &&
-    (tab === 'live' ? s.liveNM === nm : s.futureNM === nm)
+    s.city === city && (s.liveNM === nm || s.futureNM === nm)
   );
 
   if (filtered.length === 0) {
-    content.innerHTML = `<div class="info-box">No societies found in this NM for the selected tab.</div>`;
+    content.innerHTML = `<div class="info-box">No societies found for this NM.</div>`;
     return;
   }
 
@@ -1036,9 +1007,10 @@ function renderNMList(city, nm, tab) {
       <div class="nm-society-item">
         <div class="nm-society-name">${s.name}</div>
         <div class="nm-society-meta">
-          ${s.type ? `<span class="nm-society-type">${s.type}</span>` : ''}
-          ${s.area ? `<span>📍 ${s.area}</span>` : ''}
-          ${s.liveNM && tab === 'future' ? `<span>Live NM: ${s.liveNM || '—'}</span>` : ''}
+          ${s.type    ? `<span class="nm-society-type">${s.type}</span>` : ''}
+          ${s.area    ? `<span>📍 ${s.area}</span>` : ''}
+          ${s.liveNM  ? `<span>Live: ${s.liveNM}</span>`   : ''}
+          ${s.futureNM ? `<span>Future: ${s.futureNM}</span>` : ''}
         </div>
         ${s.address ? `<div class="nm-society-address">${s.address}</div>` : ''}
       </div>
