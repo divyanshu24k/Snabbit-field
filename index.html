@@ -1128,7 +1128,10 @@ function renderResults(nearby) {
           ${s.area ? `<span>📍 ${s.area}</span>` : ''}
           ${s.city ? `<span>${s.city}</span>` : ''}
         </div>
-        ${s.liveNM ? `<span class="s-nm">NM: ${s.liveNM}</span>` : ''}
+        <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+          ${s.liveNM   ? `<span class="s-nm">Live: ${s.liveNM}</span>`     : ''}
+          ${s.futureNM ? `<span class="s-nm" style="background:#6C63FF">Future: ${s.futureNM}</span>` : ''}
+        </div>
       </div>
     `).join('')}
   `;
