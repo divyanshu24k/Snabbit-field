@@ -399,28 +399,7 @@
 </div>
 
 
-<!-- ════════════════ SCREEN: ADD SOCIETY MENU ════════════════ -->
-<div class="screen" id="screen-society-menu">
-  <div class="big-label">Add Society</div>
-  <div class="big-title">What would you like to do?</div>
-  <p class="sub">Choose an option below to get started.</p>
-  <div class="option-cards">
-    <div class="option-card" onclick="navigate('screen-nm-list')">
-      <div class="option-card-icon">🗺️</div>
-      <div class="option-card-body">
-        <div class="option-card-title">NM Society List</div>
-        <div class="option-card-sub">Browse all societies in a Nano Market. Filter by city and NM to see what's already in the database.</div>
-      </div>
-    </div>
-    <div class="option-card" onclick="startAddSociety()">
-      <div class="option-card-icon">📍</div>
-      <div class="option-card-body">
-        <div class="option-card-title">Add Society</div>
-        <div class="option-card-sub">Stand at a society gate, get your GPS location, and submit a new or existing society visit.</div>
-      </div>
-    </div>
-  </div>
-</div>
+
 
 
 <!-- ════════════════ SCREEN: NM SOCIETY LIST ════════════════ -->
@@ -818,7 +797,7 @@ document.getElementById('loginUsername').addEventListener('keydown', e => { if (
 // ─────────────────────────────────────────────────────────
 function renderHomeCards() {
   const cards = [
-    { icon:'🏘️', title:'Add Society',    sub:'Visit & record a society near you',  access: state.societyAccess, action:'openSocietyMenu()' },
+    { icon:'🏘️', title:'Add Society',    sub:'Visit & record a society near you',  access: state.societyAccess, action:'startAddSociety()' },
     { icon:'📲', title:'WhatsApp Blast', sub:'Send your unique invite link',         access: state.blastAccess,   action:'startWhatsappBlast()' },
   ];
   const accessible = cards.filter(c => c.access);
