@@ -587,11 +587,11 @@
 // CONFIG
 // ─────────────────────────────────────────────────────────
 const CONFIG = {
-  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbx5VIKwqL1fvM4StfQZZy4uEljM7212dNf75uRkOtM9gdDWtOgsmyqsHyPe-c-T634gNA/exec',
-  DB_SHEET_ID:     '1kkbBU6ri1KgkV9fgkN6BYbWnPvar42CrzLN_llNfnjI',
-  CREDS_SHEET_ID:  '160K3dHzcX6bvSntjsWrjwIvnH9z0Pb6kogbCj26WbDs',
-  SUBMIT_SHEET_ID: '1V6FRXPtydfIxBaeX3z8DsJKsTg0DAnDG2inRN54o2tA',
-  BLAST_SHEET_ID:  '14VWQw0nj0asEJHM3hrkQzsq3MCA44L1RCZEM85obkg0',
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxaQ1KbxZKsDeiOUi0je--PL3mys_Sr-pdFmgsR72OWfh20CcTA0C6J7StPU0ZAo46Gtw/exec',
+  DB_SHEET_ID:     '1ZWfPa95bOhDnEhxTVahru6BpUsTijl9Po8vL2jpVK0A',
+  CREDS_SHEET_ID:  '1Q4GpTRZMj2bGg025n6cMNrIkm1D6XJBqOr-bm2J8qCY',
+  SUBMIT_SHEET_ID: '1GvCUiO1QclTwu7uwbkRVeswIxhpKPqdzVttir_CnSQU',
+  BLAST_SHEET_ID:  '1xMXKkS27fIfzMyMmUFdMiw99UQM6ZYZlcPHETwnPCVs',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
@@ -741,6 +741,10 @@ async function loadCreds() {
   const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.CREDS_SHEET_ID}/gviz/tq?tqx=out:csv`;
   const res  = await fetch(url);
   const text = await res.text();
+  // If response is HTML it means the sheet is not publicly shared
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('SHEET_ACCESS_DENIED');
+  }
   const rows = parseCSV(text);
   const headerIdx = rows.findIndex(r => r.some(c => c.toLowerCase().includes('username')));
   if (headerIdx === -1) throw new Error('Header not found');
@@ -785,7 +789,11 @@ async function doLogin() {
     saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess);
     onLoggedIn();
   } catch(e) {
-    showError('loginError', 'Could not reach server. Check your internet connection.');
+    if (e.message === 'SHEET_ACCESS_DENIED') {
+      showError('loginError', 'Login sheet is not accessible. Please contact your admin to share the credentials sheet.');
+    } else {
+      showError('loginError', 'Could not reach server. Check your internet connection.');
+    }
     btn.disabled = false; btn.textContent = 'Sign In →';
   }
 }
@@ -957,11 +965,9 @@ function populateCityDropdown() {
 }
 
 function onNMCityChange() {
-  const city   = document.getElementById('nmCitySelect').value;
-  const nmSel  = document.getElementById('nmSelect');
-  const toggle = document.getElementById('nmToggleWrap');
+  const city  = document.getElementById('nmCitySelect').value;
+  const nmSel = document.getElementById('nmSelect');
   document.getElementById('nmListContent').innerHTML = '';
-  toggle.style.display = 'none';
   nmSel.innerHTML = '<option value="">— Select NM —</option>';
 
   if (!city) { nmSel.disabled = true; return; }
