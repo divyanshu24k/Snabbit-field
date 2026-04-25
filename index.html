@@ -465,15 +465,7 @@
   <div id="gpsError" class="error-msg"></div>
   <button class="btn btn-primary" id="gpsBtn" onclick="getLocation()">📍 Get My Location</button>
 
-  <!-- Manual GPS — for testing -->
-  <div class="manual-gps-box">
-    <div class="manual-gps-label">🧪 Manual GPS (Testing Only)</div>
-    <div class="manual-gps-row">
-      <input type="number" id="manualLat" placeholder="Latitude" step="any" />
-      <input type="number" id="manualLon" placeholder="Longitude" step="any" />
-      <button class="btn-manual" onclick="useManualGPS()">Set</button>
-    </div>
-  </div>
+
 </div>
 
 
@@ -506,10 +498,7 @@
     <div class="input-wrap">
       <input type="number" id="newFlatCount" placeholder="Approx. number of flats" min="1" />
     </div>
-    <div class="input-wrap">
-      <label>Nano Market</label>
-      <input type="text" id="newNM" placeholder="Nano Market name (if known)" />
-    </div>
+
     <div class="input-wrap">
       <textarea id="newNotes" placeholder="Notes (optional) — gate type, RWA contact, etc."></textarea>
     </div>
@@ -1015,8 +1004,8 @@ function renderNMList(city, nm) {
         <div class="nm-society-meta">
           ${s.type    ? `<span class="nm-society-type">${s.type}</span>` : ''}
           ${s.area    ? `<span>📍 ${s.area}</span>` : ''}
-          ${s.liveNM  ? `<span>Live: ${s.liveNM}</span>`   : ''}
-          ${s.futureNM ? `<span>Future: ${s.futureNM}</span>` : ''}
+          ${s.liveNM   ? `<span style="color:#FF1F7D;font-weight:700">${s.liveNM}</span>`   : ''}
+          ${s.futureNM ? `<span style="color:#6C63FF;font-weight:700">${s.futureNM}</span>` : ''}
         </div>
         ${s.address ? `<div class="nm-society-address">${s.address}</div>` : ''}
       </div>
@@ -1135,8 +1124,8 @@ function renderResults(nearby) {
           ${s.city ? `<span>${s.city}</span>` : ''}
         </div>
         <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
-          ${s.liveNM   ? `<span class="s-nm">Live: ${s.liveNM}</span>`     : ''}
-          ${s.futureNM ? `<span class="s-nm" style="background:#6C63FF">Future: ${s.futureNM}</span>` : ''}
+          ${s.liveNM   ? `<span class="s-nm">${s.liveNM}</span>` : ''}
+          ${s.futureNM ? `<span class="s-nm" style="background:#6C63FF">${s.futureNM}</span>` : ''}
         </div>
       </div>
     `).join('')}
@@ -1166,7 +1155,7 @@ function showNewForm() {
   document.getElementById('submitNewBtn').textContent = 'Submit New Society';
   document.getElementById('newSocietyName').value = '';
   document.getElementById('newFlatCount').value = '';
-  document.getElementById('newNM').value = '';
+
   document.getElementById('newNotes').value = '';
   document.getElementById('newSocietyForm').scrollIntoView({ behavior: 'smooth' });
 }
@@ -1215,7 +1204,7 @@ async function submitMatch() {
 async function submitNew() {
   const name  = document.getElementById('newSocietyName').value.trim();
   const flats = document.getElementById('newFlatCount').value.trim();
-  const nm    = document.getElementById('newNM').value.trim();
+
   const notes = document.getElementById('newNotes').value.trim();
   const btn   = document.getElementById('submitNewBtn');
   if (!name)  { alert('Please enter the society name.'); return; }
@@ -1235,10 +1224,10 @@ async function submitNew() {
     flatCount:      flats,
     isNew,
     partOfDatabase: 'No',
-    nanoMarket:     nm,
+    nanoMarket:     '',
     notes,
   });
-  showSocietySuccess({ societyName: name, flatCount: flats, isNew, partOfDatabase: 'No', nanoMarket: nm || '—' });
+  showSocietySuccess({ societyName: name, flatCount: flats, isNew, partOfDatabase: 'No', nanoMarket: '—' });
 }
 
 function showSocietySuccess(data) {
@@ -1255,7 +1244,7 @@ function showSocietySuccess(data) {
 }
 
 function scanAnother() {
-  ['newSocietyName','newFlatCount','newNM','newNotes','existingFlatCount','existingNotes'].forEach(id => document.getElementById(id).value = '');
+  ['newSocietyName','newFlatCount','newNotes','existingFlatCount','existingNotes'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('submitMatchBtn').disabled    = false;
   document.getElementById('submitMatchBtn').textContent = '✓ Confirm This Society';
   document.getElementById('submitNewBtn').disabled      = false;
