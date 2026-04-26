@@ -822,7 +822,7 @@ function renderHomeCards() {
 // SOCIETY MENU
 // ─────────────────────────────────────────────────────────
 function openSocietyMenu() {
-  navigate('screen-society-menu');
+  startAddSociety();
 }
 
 
@@ -1001,8 +1001,7 @@ function startAddSociety() {
   document.getElementById('gpsIcon').classList.remove('pulsing');
   document.getElementById('gpsStatus').textContent = 'Ready to detect location';
   document.getElementById('coordDisplay').style.display = 'none';
-  document.getElementById('manualLat').value = '';
-  document.getElementById('manualLon').value = '';
+
   hideMsg('gpsError');
   const btn = document.getElementById('gpsBtn');
   btn.textContent = '📍 Get My Location'; btn.onclick = getLocation; btn.disabled = false;
@@ -1040,28 +1039,6 @@ function getLocation() {
   );
 }
 
-// Manual GPS — for testing
-function useManualGPS() {
-  const lat = parseFloat(document.getElementById('manualLat').value);
-  const lon = parseFloat(document.getElementById('manualLon').value);
-  if (isNaN(lat) || isNaN(lon))  { alert('Please enter valid latitude and longitude.'); return; }
-  if (lat < -90  || lat > 90)    { alert('Latitude must be between -90 and 90.'); return; }
-  if (lon < -180 || lon > 180)   { alert('Longitude must be between -180 and 180.'); return; }
-  state.userLat = lat;
-  state.userLon = lon;
-  const icon = document.getElementById('gpsIcon');
-  const stat = document.getElementById('gpsStatus');
-  icon.classList.remove('pulsing');
-  icon.textContent   = '🧪';
-  stat.textContent   = 'Manual coordinates set (testing)';
-  const cd = document.getElementById('coordDisplay');
-  cd.style.display = 'block';
-  cd.textContent   = `${lat.toFixed(6)}, ${lon.toFixed(6)}  (manual)`;
-  const btn = document.getElementById('gpsBtn');
-  btn.textContent = '🔍 Search Nearby Societies';
-  btn.disabled    = false;
-  btn.onclick     = searchNearby;
-}
 
 async function searchNearby() {
   navigate('screen-results');
