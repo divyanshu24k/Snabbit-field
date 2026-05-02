@@ -300,6 +300,68 @@
   .loading { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 24px; color: var(--muted); font-size: 14px; font-weight: 600; }
   .spinner { width: 20px; height: 20px; border: 2.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── PERFORMANCE / LEADERBOARD ── */
+  .perf-hero {
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+    border-radius: 22px; padding: 22px 20px; color: #fff; margin-bottom: 16px;
+    box-shadow: 0 8px 24px rgba(255,31,125,0.25);
+  }
+  .perf-hero-label    { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; opacity: 0.9; }
+  .perf-hero-number   { font-size: 48px; font-weight: 800; line-height: 1.1; margin-top: 4px; }
+  .perf-hero-sub      { font-size: 13px; font-weight: 600; opacity: 0.95; margin-top: 2px; }
+  .perf-progress-wrap { background: rgba(255,255,255,0.25); border-radius: 12px; height: 10px; margin-top: 14px; overflow: hidden; }
+  .perf-progress-fill { background: #fff; height: 100%; border-radius: 12px; transition: width 0.4s; }
+  .perf-progress-text { font-size: 12px; font-weight: 700; margin-top: 8px; opacity: 0.95; }
+  .perf-stats-row     { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .perf-stat-card     { background: var(--surface); border: 2px solid var(--border); border-radius: 16px; padding: 14px 10px; text-align: center; }
+  .perf-stat-value    { font-size: 22px; font-weight: 800; color: var(--navy); }
+  .perf-stat-label    { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; margin-top: 2px; }
+  .perf-announce {
+    background: var(--surface2); border: 2px solid var(--border); border-left: 5px solid var(--accent);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 16px;
+    font-size: 13px; font-weight: 600; color: var(--navy); line-height: 1.4;
+  }
+  .perf-section-label { font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin: 18px 0 10px; }
+  .perf-action-btn    { background: var(--surface); border: 2px solid var(--border); border-radius: 14px; padding: 14px 16px; font-size: 14px; font-weight: 700; color: var(--navy); cursor: pointer; width: 100%; margin-bottom: 10px; text-align: left; display: flex; align-items: center; justify-content: space-between; font-family: 'Nunito', sans-serif; }
+  .perf-action-btn:hover { border-color: var(--accent); }
+  .perf-action-btn .arrow { color: var(--accent); font-weight: 800; }
+
+  /* ── LEADERBOARD LIST ── */
+  .lb-list { display: flex; flex-direction: column; gap: 8px; }
+  .lb-row {
+    background: var(--surface); border: 1.5px solid var(--border); border-radius: 14px;
+    padding: 12px 14px; display: flex; align-items: center; gap: 12px;
+  }
+  .lb-row.lb-me { border-color: var(--accent); background: var(--surface2); border-width: 2.5px; }
+  .lb-rank      { font-size: 16px; font-weight: 800; color: var(--navy); min-width: 32px; text-align: center; }
+  .lb-rank.top1 { color: #FFB800; }
+  .lb-rank.top2 { color: #B0B7C3; }
+  .lb-rank.top3 { color: #CD7F32; }
+  .lb-name      { flex: 1; font-size: 14px; font-weight: 700; color: var(--navy); }
+  .lb-recharges { font-size: 14px; font-weight: 800; color: var(--accent); }
+  .lb-pinned-me {
+    position: sticky; bottom: 12px; margin-top: 16px;
+    background: var(--navy); color: #fff; border-radius: 14px;
+    padding: 12px 14px; display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 6px 20px rgba(30,27,75,0.25);
+  }
+  .lb-pinned-me .lb-rank      { color: #fff; }
+  .lb-pinned-me .lb-name      { color: #fff; }
+  .lb-pinned-me .lb-recharges { color: #fff; }
+
+  /* ── INCENTIVE INFO TABLE ── */
+  .inc-table {
+    background: var(--surface); border: 2px solid var(--border); border-radius: 16px;
+    padding: 4px 0; margin-bottom: 16px; overflow: hidden;
+  }
+  .inc-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .inc-row:last-child { border-bottom: none; }
+  .inc-row.inc-header { background: var(--surface2); font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .inc-row .inc-key   { font-size: 14px; font-weight: 700; color: var(--navy); }
+  .inc-row .inc-val   { font-size: 16px; font-weight: 800; color: var(--accent); }
+  .inc-row.inc-header .inc-key, .inc-row.inc-header .inc-val { font-size: 11px; color: var(--muted); }
+
 </style>
 </head>
 <body>
@@ -550,6 +612,64 @@
 </div>
 
 
+<!-- ════════════════ SCREEN: MY PERFORMANCE ════════════════ -->
+<div class="screen" id="screen-performance">
+  <div class="big-label" id="perfCampaignLabel">Current Campaign</div>
+  <div class="big-title" id="perfCampaignName">Loading…</div>
+  <p class="sub" id="perfCampaignDates">—</p>
+  <div id="perfError" class="error-msg"></div>
+  <div id="perfLoading" class="loading"><div class="spinner"></div> Loading your stats…</div>
+
+  <div id="perfContent" style="display:none">
+    <div class="perf-hero">
+      <div class="perf-hero-label">Recharges this campaign</div>
+      <div class="perf-hero-number" id="perfRecharges">0</div>
+      <div class="perf-hero-sub" id="perfNextSlab">—</div>
+      <div class="perf-progress-wrap"><div class="perf-progress-fill" id="perfProgressFill" style="width:0%"></div></div>
+      <div class="perf-progress-text" id="perfProgressText">—</div>
+    </div>
+
+    <div class="perf-stats-row">
+      <div class="perf-stat-card"><div class="perf-stat-value" id="perfRank">—</div><div class="perf-stat-label">Rank</div></div>
+      <div class="perf-stat-card"><div class="perf-stat-value" id="perfEarned">₹0</div><div class="perf-stat-label">Earned</div></div>
+      <div class="perf-stat-card"><div class="perf-stat-value" id="perfBonus">—</div><div class="perf-stat-label">Bonus</div></div>
+    </div>
+
+    <div class="perf-announce" id="perfAnnounce" style="display:none"></div>
+
+    <button class="perf-action-btn" onclick="openLeaderboard()">🏆 View Full Leaderboard <span class="arrow">→</span></button>
+    <button class="perf-action-btn" onclick="openIncentiveInfo()">💰 Incentive Structure <span class="arrow">→</span></button>
+  </div>
+</div>
+
+
+<!-- ════════════════ SCREEN: LEADERBOARD ════════════════ -->
+<div class="screen" id="screen-leaderboard">
+  <div class="big-label">Leaderboard</div>
+  <div class="big-title">Top Performers</div>
+  <p class="sub" id="lbSub">Live ranking — updates every few minutes.</p>
+  <div id="lbError" class="error-msg"></div>
+  <div id="lbLoading" class="loading"><div class="spinner"></div> Loading leaderboard…</div>
+  <div class="lb-list" id="lbList"></div>
+  <div id="lbPinnedMe"></div>
+</div>
+
+
+<!-- ════════════════ SCREEN: INCENTIVE INFO ════════════════ -->
+<div class="screen" id="screen-incentive-info">
+  <div class="big-label">Incentive Structure</div>
+  <div class="big-title">How You Earn</div>
+  <p class="sub">Hit a slab and earn the matching incentive. Top 3 ranks get extra bonus.</p>
+  <div id="incError" class="error-msg"></div>
+
+  <div class="perf-section-label">Recharge Slabs</div>
+  <div class="inc-table" id="incSlabsTable"></div>
+
+  <div class="perf-section-label">Top Rank Bonus</div>
+  <div class="inc-table" id="incBonusTable"></div>
+</div>
+
+
 <script>
 // ─────────────────────────────────────────────────────────
 // CONFIG
@@ -560,6 +680,8 @@ const CONFIG = {
   CREDS_SHEET_ID:  '1Q4GpTRZMj2bGg025n6cMNrIkm1D6XJBqOr-bm2J8qCY',
   SUBMIT_SHEET_ID: '1GvCUiO1QclTwu7uwbkRVeswIxhpKPqdzVttir_CnSQU',
   BLAST_SHEET_ID:  '1xMXKkS27fIfzMyMmUFdMiw99UQM6ZYZlcPHETwnPCVs',
+  PERFORMANCE_SHEET_ID:      '1sCzhhkVlrSijVNwo9NwDVxldv1E7y2Xjh53Z3PPoyWU',
+  INCENTIVE_CONFIG_SHEET_ID: '11XgLAKpWjzSq8jZAZfqq7R83zEx-M0jH3FGga6qnWj8',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
@@ -585,29 +707,34 @@ Snabbit Community Team`;
 // APP STATE
 // ─────────────────────────────────────────────────────────
 let state = {
-  agentName:       '',
-  agentCode:       '',
-  blastAccess:     false,
-  societyAccess:   false,
-  userLat:         null,
-  userLon:         null,
-  database:        [],   // full parsed DB rows
-  dbLoaded:        false,
-  allSocieties:    [],   // deduplicated for blast search
-  selectedSociety: null,
-  blastSociety:    '',
-  blastSocietyNM:  '',
-  screenHistory:   [],
-  nmTab:           'live', // 'live' or 'future'
+  agentName:         '',
+  agentCode:         '',
+  blastAccess:       false,
+  societyAccess:     false,
+  leaderboardAccess: false,
+  userLat:           null,
+  userLon:           null,
+  database:          [],   // full parsed DB rows
+  dbLoaded:          false,
+  allSocieties:      [],   // deduplicated for blast search
+  selectedSociety:   null,
+  blastSociety:      '',
+  blastSocietyNM:    '',
+  screenHistory:     [],
+  nmTab:             'live', // 'live' or 'future'
+  performanceData:   [],   // parsed BDE Performance sheet
+  incentiveSlabs:    [],   // [{recharges, incentive}, ...] sorted desc
+  topBonus:          [],   // [{rank, bonus}, ...]
+  campaignInfo:      null, // { name, start, end, announcement }
 };
 
 
 // ─────────────────────────────────────────────────────────
 // SESSION
 // ─────────────────────────────────────────────────────────
-function saveSession(username, name, agentCode, blastAccess, societyAccess) {
+function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess) {
   const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
-  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, expiry }));
+  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, expiry }));
 }
 function loadSession() {
   try {
@@ -726,6 +853,7 @@ async function loadCreds() {
     aIdx:     h.findIndex(c => c === 'active'),
     blastIdx: h.findIndex(c => c.includes('blast')),
     socIdx:   h.findIndex(c => c.includes('society')),
+    lbIdx:    h.findIndex(c => c.includes('leaderboard')),
   };
 }
 
@@ -741,7 +869,7 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx } = await loadCreds();
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
       String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
       String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
@@ -750,11 +878,12 @@ async function doLogin() {
       showError('loginError', 'Invalid username or password. Please try again.');
       btn.disabled = false; btn.textContent = 'Sign In →'; return;
     }
-    state.agentName     = match[nIdx] || username;
-    state.agentCode     = match[cIdx] || username;
-    state.blastAccess   = toBoolean(match[blastIdx]);
-    state.societyAccess = toBoolean(match[socIdx]);
-    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess);
+    state.agentName         = match[nIdx] || username;
+    state.agentCode         = match[cIdx] || username;
+    state.blastAccess       = toBoolean(match[blastIdx]);
+    state.societyAccess     = toBoolean(match[socIdx]);
+    state.leaderboardAccess = lbIdx >= 0 ? toBoolean(match[lbIdx]) : false;
+    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess);
     onLoggedIn();
   } catch(e) {
     if (e.message === 'SHEET_ACCESS_DENIED') {
@@ -783,7 +912,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', blastAccess:false, societyAccess:false, userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live' };
+  state = { agentName:'', agentCode:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabs:[], topBonus:[], campaignInfo:null };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -797,8 +926,9 @@ document.getElementById('loginUsername').addEventListener('keydown', e => { if (
 // ─────────────────────────────────────────────────────────
 function renderHomeCards() {
   const cards = [
-    { icon:'🏘️', title:'Add Society',    sub:'Visit & record a society near you',  access: state.societyAccess, action:'startAddSociety()' },
-    { icon:'📲', title:'WhatsApp Blast', sub:'Send your unique invite link',         access: state.blastAccess,   action:'startWhatsappBlast()' },
+    { icon:'🏘️', title:'Add Society',     sub:'Visit & record a society near you',  access: state.societyAccess,     action:'startAddSociety()' },
+    { icon:'📲', title:'WhatsApp Blast',  sub:'Send your unique invite link',        access: state.blastAccess,       action:'startWhatsappBlast()' },
+    { icon:'🏆', title:'My Performance',  sub:'See your rank & incentive earned',    access: state.leaderboardAccess, action:'openPerformance()' },
   ];
   const accessible = cards.filter(c => c.access);
   const grid = document.getElementById('homeGrid');
@@ -1336,15 +1466,276 @@ async function confirmSendWhatsApp() {
 
 
 // ─────────────────────────────────────────────────────────
+// PERFORMANCE / LEADERBOARD / INCENTIVE
+// All reads use the same gviz CSV pattern as loadCreds.
+// Sheets must be shared with "Anyone with the link — Viewer".
+// ─────────────────────────────────────────────────────────
+
+// Fetch the BDE Performance sheet (Agent Code | Recharges | Last Updated).
+async function loadPerformance() {
+  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/gviz/tq?tqx=out:csv`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('PERFORMANCE_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
+  const headerIdx = rows.findIndex(r => r.some(c => c.toLowerCase().includes('agent code') || c.toLowerCase().includes('agent_code')));
+  if (headerIdx === -1) throw new Error('Performance header not found');
+  const h = rows[headerIdx].map(c => c.toLowerCase().trim());
+  const codeIdx = h.findIndex(c => c.includes('agent code') || c.includes('agent_code') || c === 'code');
+  const rechIdx = h.findIndex(c => c.includes('recharge'));
+  const nameIdx = h.findIndex(c => c.includes('name'));   // optional
+  const data = rows.slice(headerIdx + 1)
+    .filter(r => r[codeIdx] && String(r[codeIdx]).trim() !== '')
+    .map(r => ({
+      agentCode: String(r[codeIdx]).trim(),
+      agentName: nameIdx >= 0 ? String(r[nameIdx] || '').trim() : '',
+      recharges: parseInt(String(r[rechIdx] || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+    }));
+  // Sort once, descending — used for leaderboard and rank lookup.
+  data.sort((a, b) => b.recharges - a.recharges);
+  // Assign rank (ties get the same rank).
+  let lastRech = null, lastRank = 0;
+  data.forEach((d, i) => {
+    if (d.recharges !== lastRech) { lastRank = i + 1; lastRech = d.recharges; }
+    d.rank = lastRank;
+  });
+  state.performanceData = data;
+  return data;
+}
+
+// Fetch the Incentive Config sheet — three tabs: Active, Slabs, Bonus.
+async function loadIncentiveConfig() {
+  const base = `https://docs.google.com/spreadsheets/d/${CONFIG.INCENTIVE_CONFIG_SHEET_ID}/gviz/tq?tqx=out:csv`;
+  const [activeText, slabsText, bonusText] = await Promise.all([
+    fetch(base + '&sheet=Active').then(r => r.text()),
+    fetch(base + '&sheet=Slabs').then(r => r.text()),
+    fetch(base + '&sheet=Bonus').then(r => r.text()),
+  ]);
+  const anyHtml = [activeText, slabsText, bonusText].some(t => t.trim().startsWith('<!DOCTYPE') || t.trim().startsWith('<html'));
+  if (anyHtml) throw new Error('INCENTIVE_SHEET_ACCESS_DENIED');
+
+  // Active tab — key/value pairs in two columns.
+  const activeRows = parseCSV(activeText);
+  const info = { name: '', start: '', end: '', announcement: '' };
+  activeRows.forEach(r => {
+    const k = String(r[0] || '').toLowerCase().trim();
+    const v = String(r[1] || '').trim();
+    if (k.includes('campaign name')) info.name         = v;
+    if (k.includes('start'))         info.start        = v;
+    if (k.includes('end'))           info.end          = v;
+    if (k.includes('announce'))      info.announcement = v;
+  });
+  state.campaignInfo = info;
+
+  // Slabs tab — Recharges | Incentive
+  const slabRows = parseCSV(slabsText);
+  const slabHeaderIdx = slabRows.findIndex(r => r.some(c => c.toLowerCase().includes('recharge')));
+  const slabs = slabRows.slice(slabHeaderIdx + 1)
+    .filter(r => r[0] && !isNaN(parseInt(r[0])))
+    .map(r => ({ recharges: parseInt(r[0], 10), incentive: parseInt(String(r[1] || '0').replace(/[^0-9-]/g, ''), 10) || 0 }))
+    .sort((a, b) => b.recharges - a.recharges); // highest first
+  state.incentiveSlabs = slabs;
+
+  // Bonus tab — Rank | Bonus
+  const bonusRows = parseCSV(bonusText);
+  const bonusHeaderIdx = bonusRows.findIndex(r => r.some(c => c.toLowerCase().includes('rank')));
+  const bonuses = bonusRows.slice(bonusHeaderIdx + 1)
+    .filter(r => r[0] && !isNaN(parseInt(r[0])))
+    .map(r => ({ rank: parseInt(r[0], 10), bonus: parseInt(String(r[1] || '0').replace(/[^0-9-]/g, ''), 10) || 0 }))
+    .sort((a, b) => a.rank - b.rank);
+  state.topBonus = bonuses;
+}
+
+// Given a recharge count, return the incentive earned (highest slab they cleared).
+function calcIncentive(recharges) {
+  for (const slab of state.incentiveSlabs) {
+    if (recharges >= slab.recharges) return slab.incentive;
+  }
+  return 0;
+}
+
+// Given a recharge count, return the next slab target (or null if maxed).
+function nextSlab(recharges) {
+  // slabs are sorted desc — reverse to look at smallest unmet target.
+  const slabsAsc = [...state.incentiveSlabs].sort((a, b) => a.recharges - b.recharges);
+  for (const slab of slabsAsc) {
+    if (recharges < slab.recharges) return slab;
+  }
+  return null;
+}
+
+// Given a rank, return the matching top-rank bonus or 0.
+function calcBonus(rank) {
+  const b = state.topBonus.find(x => x.rank === rank);
+  return b ? b.bonus : 0;
+}
+
+// Entry point from home card.
+async function openPerformance() {
+  navigate('screen-performance');
+  document.getElementById('perfLoading').style.display = 'flex';
+  document.getElementById('perfContent').style.display = 'none';
+  hideMsg('perfError');
+  try {
+    await Promise.all([loadPerformance(), loadIncentiveConfig()]);
+    renderPerformance();
+  } catch (e) {
+    document.getElementById('perfLoading').style.display = 'none';
+    if (e.message && e.message.includes('ACCESS_DENIED')) {
+      showError('perfError', 'Performance sheets are not shared. Please contact admin.');
+    } else {
+      showError('perfError', 'Could not load your performance. Check your internet and try again.');
+    }
+  }
+}
+
+function renderPerformance() {
+  const me = state.performanceData.find(d => d.agentCode === state.agentCode);
+  const myRecharges = me ? me.recharges : 0;
+  const myRank      = me ? me.rank      : '—';
+  const earned      = calcIncentive(myRecharges);
+  const next        = nextSlab(myRecharges);
+  const bonus       = me ? calcBonus(me.rank) : 0;
+
+  // Header
+  if (state.campaignInfo) {
+    document.getElementById('perfCampaignName').textContent  = state.campaignInfo.name || 'Active Campaign';
+    const dates = (state.campaignInfo.start && state.campaignInfo.end)
+      ? `${state.campaignInfo.start} → ${state.campaignInfo.end}` : 'Live now';
+    document.getElementById('perfCampaignDates').textContent = dates;
+  }
+
+  // Hero
+  document.getElementById('perfRecharges').textContent = myRecharges;
+  if (next) {
+    const remaining = next.recharges - myRecharges;
+    document.getElementById('perfNextSlab').textContent = `${remaining} more for ₹${next.incentive}`;
+    // Progress: from previous slab cleared (or 0) to next slab.
+    const prevSlab = state.incentiveSlabs.find(s => myRecharges >= s.recharges);
+    const floor    = prevSlab ? prevSlab.recharges : 0;
+    const span     = next.recharges - floor;
+    const filled   = span > 0 ? ((myRecharges - floor) / span) * 100 : 0;
+    document.getElementById('perfProgressFill').style.width = Math.max(0, Math.min(100, filled)) + '%';
+    document.getElementById('perfProgressText').textContent = `Next target: ${next.recharges} recharges`;
+  } else {
+    document.getElementById('perfNextSlab').textContent = 'Top slab achieved! 🎉';
+    document.getElementById('perfProgressFill').style.width = '100%';
+    document.getElementById('perfProgressText').textContent = 'Maxed out';
+  }
+
+  // Stats row
+  document.getElementById('perfRank').textContent   = myRank === '—' ? '—' : '#' + myRank;
+  document.getElementById('perfEarned').textContent = '₹' + earned;
+  document.getElementById('perfBonus').textContent  = bonus > 0 ? '₹' + bonus : '—';
+
+  // Announcement
+  const ann = document.getElementById('perfAnnounce');
+  if (state.campaignInfo && state.campaignInfo.announcement) {
+    ann.textContent = '📣 ' + state.campaignInfo.announcement;
+    ann.style.display = 'block';
+  } else {
+    ann.style.display = 'none';
+  }
+
+  document.getElementById('perfLoading').style.display = 'none';
+  document.getElementById('perfContent').style.display = 'block';
+}
+
+// Leaderboard screen.
+async function openLeaderboard() {
+  navigate('screen-leaderboard');
+  document.getElementById('lbLoading').style.display = 'flex';
+  document.getElementById('lbList').innerHTML = '';
+  document.getElementById('lbPinnedMe').innerHTML = '';
+  hideMsg('lbError');
+  try {
+    if (state.performanceData.length === 0) await loadPerformance();
+    renderLeaderboard();
+  } catch (e) {
+    document.getElementById('lbLoading').style.display = 'none';
+    showError('lbError', 'Could not load leaderboard. Try again.');
+  }
+}
+
+function renderLeaderboard() {
+  const top = state.performanceData.slice(0, 10);
+  const list = document.getElementById('lbList');
+  list.innerHTML = top.map(d => {
+    const isMe = d.agentCode === state.agentCode;
+    const rankClass = d.rank === 1 ? 'top1' : d.rank === 2 ? 'top2' : d.rank === 3 ? 'top3' : '';
+    const medal = d.rank === 1 ? '🥇' : d.rank === 2 ? '🥈' : d.rank === 3 ? '🥉' : '';
+    const displayName = d.agentName || d.agentCode;
+    return `
+      <div class="lb-row${isMe ? ' lb-me' : ''}">
+        <div class="lb-rank ${rankClass}">${medal || '#' + d.rank}</div>
+        <div class="lb-name">${displayName}${isMe ? ' (You)' : ''}</div>
+        <div class="lb-recharges">${d.recharges}</div>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('lbSub').textContent = `Showing top 10 of ${state.performanceData.length} BDEs`;
+
+  // Pinned "you" row only if user is outside top 10.
+  const me = state.performanceData.find(d => d.agentCode === state.agentCode);
+  const meInTop10 = top.some(d => d.agentCode === state.agentCode);
+  const pinned = document.getElementById('lbPinnedMe');
+  if (me && !meInTop10) {
+    pinned.innerHTML = `
+      <div class="lb-pinned-me">
+        <div class="lb-rank">#${me.rank}</div>
+        <div class="lb-name">You · ${state.agentName.split(' ')[0]}</div>
+        <div class="lb-recharges">${me.recharges}</div>
+      </div>
+    `;
+  } else {
+    pinned.innerHTML = '';
+  }
+  document.getElementById('lbLoading').style.display = 'none';
+}
+
+// Incentive info screen.
+async function openIncentiveInfo() {
+  navigate('screen-incentive-info');
+  hideMsg('incError');
+  try {
+    if (state.incentiveSlabs.length === 0) await loadIncentiveConfig();
+    renderIncentiveInfo();
+  } catch (e) {
+    showError('incError', 'Could not load incentive info. Try again.');
+  }
+}
+
+function renderIncentiveInfo() {
+  const slabsTable = document.getElementById('incSlabsTable');
+  slabsTable.innerHTML = `
+    <div class="inc-row inc-header"><span class="inc-key">Recharges</span><span class="inc-val">Incentive</span></div>
+    ${state.incentiveSlabs
+      .slice() // copy
+      .sort((a, b) => a.recharges - b.recharges)
+      .map(s => `<div class="inc-row"><span class="inc-key">${s.recharges} recharges</span><span class="inc-val">₹${s.incentive}</span></div>`)
+      .join('')}
+  `;
+  const bonusTable = document.getElementById('incBonusTable');
+  bonusTable.innerHTML = `
+    <div class="inc-row inc-header"><span class="inc-key">Rank</span><span class="inc-val">Bonus</span></div>
+    ${state.topBonus.map(b => `<div class="inc-row"><span class="inc-key">Rank #${b.rank}</span><span class="inc-val">₹${b.bonus}</span></div>`).join('')}
+  `;
+}
+
+
+// ─────────────────────────────────────────────────────────
 // AUTO LOGIN
 // ─────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
   const session = loadSession();
   if (session) {
-    state.agentName     = session.name;
-    state.agentCode     = session.agentCode;
-    state.blastAccess   = session.blastAccess;
-    state.societyAccess = session.societyAccess;
+    state.agentName         = session.name;
+    state.agentCode         = session.agentCode;
+    state.blastAccess       = session.blastAccess;
+    state.societyAccess     = session.societyAccess;
+    state.leaderboardAccess = session.leaderboardAccess || false;
     onLoggedIn();
   }
 });
