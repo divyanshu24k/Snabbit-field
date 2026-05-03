@@ -1726,7 +1726,7 @@ async function submitOnboarding() {
 // Sheets must be shared with "Anyone with the link — Viewer".
 // ─────────────────────────────────────────────────────────
 
-// Fetch the BDE Performance sheet (Agent Code | Agent Name | City | Recharges | Last Updated).
+// Fetch the BDE Performance sheet (Agent code | Name | Ref Code | Recharges | Last Updated | City).
 async function loadPerformance() {
   const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/export?format=csv&gid=0`;
   const res  = await fetch(url);
@@ -1738,15 +1738,21 @@ async function loadPerformance() {
   const headerIdx = rows.findIndex(r => r.some(c => c.toLowerCase().includes('agent code') || c.toLowerCase().includes('agent_code')));
   if (headerIdx === -1) throw new Error('Performance header not found');
   const h = rows[headerIdx].map(c => c.toLowerCase().trim());
-  const codeIdx = h.findIndex(c => c.includes('agent code') || c.includes('agent_code') || c === 'code');
-  const rechIdx = h.findIndex(c => c.includes('recharge'));
-  const nameIdx = h.findIndex(c => c.includes('name'));
-  const cityIdx = h.findIndex(c => c === 'city' || c.includes('city'));
+
+  // Resolve column indices. Order matters: 'ref code' contains 'code' so we
+  // look for it FIRST, then exclude it when finding 'agent code' / 'name'.
+  const refCodeIdx = h.findIndex(c => c.includes('ref code') || c.includes('referral'));
+  const codeIdx    = h.findIndex((c, i) => i !== refCodeIdx && (c.includes('agent code') || c.includes('agent_code')));
+  const rechIdx    = h.findIndex(c => c.includes('recharge'));
+  const nameIdx    = h.findIndex(c => c === 'name' || c.includes('agent name') || (c.includes('name') && !c.includes('user')));
+  const cityIdx    = h.findIndex(c => c === 'city' || c.includes('city'));
+
   const data = rows.slice(headerIdx + 1)
     .filter(r => r[codeIdx] && String(r[codeIdx]).trim() !== '')
     .map(r => ({
       agentCode: String(r[codeIdx]).trim(),
       agentName: nameIdx >= 0 ? String(r[nameIdx] || '').trim() : '',
+      refCode:   refCodeIdx >= 0 ? String(r[refCodeIdx] || '').trim() : '',
       city:      cityIdx >= 0 ? String(r[cityIdx] || '').trim() : '',
       recharges: parseInt(String(r[rechIdx] || '0').replace(/[^0-9-]/g, ''), 10) || 0,
     }));
@@ -1949,11 +1955,12 @@ function setLeaderboardView(view) {
 function renderLeaderboard() {
   // 1) Identity card (always visible at top — name, ref code, ranks)
   const me = state.performanceData.find(d => d.agentCode === state.agentCode);
-  const myDisplayName = state.displayName || state.agentName || '—';
+  const myDisplayName = state.displayName || (me && me.agentName) || state.agentName || '—';
+  // Prefer Ref Code from the Performance sheet (single source of truth, set by data team).
+  // Fall back to onboarding-collected ref code, then nothing.
+  const myRefCode = (me && me.refCode) || state.referralCode || '';
   document.getElementById('lbIdentityName').textContent = myDisplayName;
-  document.getElementById('lbIdentityCode').textContent = state.referralCode
-    ? `${state.agentCode} · ${state.referralCode}`
-    : state.agentCode || '—';
+  document.getElementById('lbIdentityCode').textContent = myRefCode || '—';
 
   const cityPill = document.getElementById('lbIdentityCity');
   const cityBlock = document.getElementById('lbIdentityCityBlock');
@@ -2033,8 +2040,10 @@ function renderLeaderboardList() {
   list.innerHTML = top.map(d => {
     const isMe = d.agentCode === state.agentCode;
     const displayName = isMe
-      ? (state.displayName || d.agentName || d.agentCode)
-      : (d.agentName || d.agentCode);
+      ? (state.displayName || d.agentName || 'Unknown')
+      : (d.agentName || 'Unknown');
+    // Show Ref Code as the only identifier (drop Agent Code per design).
+    const refCode = d.refCode || '—';
     const cityMeta = d.city ? `<span class="dot">·</span><span>${d.city}</span>` : '';
     return `
       <div class="lb-row${isMe ? ' lb-me' : ''}">
@@ -2042,7 +2051,7 @@ function renderLeaderboardList() {
         <div class="lb-info">
           <div class="lb-info-name">${displayName}${isMe ? ' · You' : ''}</div>
           <div class="lb-info-meta">
-            <span>${d.agentCode}</span>
+            <span>${refCode}</span>
             ${cityMeta}
           </div>
         </div>
