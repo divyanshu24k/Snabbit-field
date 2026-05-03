@@ -327,28 +327,124 @@
   .perf-action-btn:hover { border-color: var(--accent); }
   .perf-action-btn .arrow { color: var(--accent); font-weight: 800; }
 
-  /* ── LEADERBOARD LIST ── */
+  /* ── ONBOARDING ── */
+  .onb-intro {
+    background: var(--surface2); border: 1.5px solid var(--border);
+    border-left: 5px solid var(--accent);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 18px;
+    font-size: 13px; font-weight: 600; color: var(--navy); line-height: 1.5;
+  }
+  .onb-warning {
+    background: #FFF7E6; border: 1.5px solid #FFD699;
+    border-radius: 12px; padding: 10px 14px; margin-top: -8px; margin-bottom: 14px;
+    font-size: 12px; font-weight: 600; color: #8B5A00; line-height: 1.4;
+  }
+
+  /* ── LEADERBOARD (clean, banking-app style) ── */
+
+  /* Toggle: National / City */
+  .lb-toggle-wrap {
+    background: var(--surface2); border: 1.5px solid var(--border);
+    border-radius: 14px; padding: 4px; display: flex; gap: 4px;
+    margin-bottom: 16px;
+  }
+  .lb-toggle-btn {
+    flex: 1; background: transparent; border: none; cursor: pointer;
+    padding: 10px 12px; border-radius: 10px;
+    font-family: 'Nunito', sans-serif; font-size: 13px; font-weight: 700;
+    color: var(--muted); transition: all 0.15s;
+  }
+  .lb-toggle-btn.active {
+    background: var(--surface); color: var(--navy);
+    box-shadow: 0 1px 3px rgba(30,27,75,0.08);
+  }
+
+  /* Identity card pinned at top: name + ref code + national + city ranks */
+  .lb-identity {
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: 16px; padding: 16px; margin-bottom: 18px;
+  }
+  .lb-identity-top {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 14px;
+  }
+  .lb-identity-name {
+    font-size: 16px; font-weight: 800; color: var(--navy); line-height: 1.25;
+  }
+  .lb-identity-code {
+    font-size: 12px; font-weight: 600; color: var(--muted); margin-top: 2px;
+    letter-spacing: 0.5px;
+  }
+  .lb-identity-city-pill {
+    background: var(--surface2); border: 1.5px solid var(--border);
+    border-radius: 999px; padding: 4px 10px;
+    font-size: 11px; font-weight: 700; color: var(--muted);
+    letter-spacing: 0.3px;
+  }
+  .lb-identity-ranks {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  .lb-identity-ranks.single { grid-template-columns: 1fr; }
+  .lb-identity-rank-block {}
+  .lb-identity-rank-label {
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    letter-spacing: 1px; text-transform: uppercase;
+  }
+  .lb-identity-rank-value {
+    font-size: 22px; font-weight: 800; color: var(--navy); margin-top: 2px;
+    line-height: 1;
+  }
+  .lb-identity-rank-value .rank-of {
+    font-size: 13px; font-weight: 600; color: var(--muted); margin-left: 4px;
+  }
+
+  /* List rows */
   .lb-list { display: flex; flex-direction: column; gap: 8px; }
   .lb-row {
-    background: var(--surface); border: 1.5px solid var(--border); border-radius: 14px;
-    padding: 12px 14px; display: flex; align-items: center; gap: 12px;
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: 14px; padding: 14px 16px;
+    display: flex; align-items: center; gap: 14px;
   }
-  .lb-row.lb-me { border-color: var(--accent); background: var(--surface2); border-width: 2.5px; }
-  .lb-rank      { font-size: 16px; font-weight: 800; color: var(--navy); min-width: 32px; text-align: center; }
-  .lb-rank.top1 { color: #FFB800; }
-  .lb-rank.top2 { color: #B0B7C3; }
-  .lb-rank.top3 { color: #CD7F32; }
-  .lb-name      { flex: 1; font-size: 14px; font-weight: 700; color: var(--navy); }
-  .lb-recharges { font-size: 14px; font-weight: 800; color: var(--accent); }
-  .lb-pinned-me {
-    position: sticky; bottom: 12px; margin-top: 16px;
-    background: var(--navy); color: #fff; border-radius: 14px;
-    padding: 12px 14px; display: flex; align-items: center; gap: 12px;
-    box-shadow: 0 6px 20px rgba(30,27,75,0.25);
+  .lb-row.lb-me {
+    border-color: var(--accent); border-width: 2px;
+    background: linear-gradient(180deg, rgba(255,31,125,0.04) 0%, var(--surface) 100%);
   }
-  .lb-pinned-me .lb-rank      { color: #fff; }
-  .lb-pinned-me .lb-name      { color: #fff; }
-  .lb-pinned-me .lb-recharges { color: #fff; }
+  .lb-rank-tile {
+    min-width: 36px; height: 36px; border-radius: 10px;
+    background: var(--surface2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 800; color: var(--navy);
+    flex-shrink: 0;
+  }
+  .lb-row.lb-me .lb-rank-tile {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+  }
+  .lb-info { flex: 1; min-width: 0; }
+  .lb-info-name {
+    font-size: 14px; font-weight: 700; color: var(--navy);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .lb-info-meta {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    margin-top: 2px; letter-spacing: 0.3px;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .lb-info-meta .dot { opacity: 0.5; }
+  .lb-recharges {
+    font-size: 18px; font-weight: 800; color: var(--navy);
+    flex-shrink: 0;
+  }
+  .lb-recharges-label {
+    display: block; font-size: 9px; font-weight: 700; color: var(--muted);
+    letter-spacing: 0.5px; text-transform: uppercase; text-align: right;
+    margin-top: -2px;
+  }
+
+  .lb-empty {
+    background: var(--surface); border: 1.5px dashed var(--border);
+    border-radius: 14px; padding: 28px 16px; text-align: center;
+    font-size: 13px; font-weight: 600; color: var(--muted);
+  }
 
   /* ── INCENTIVE INFO TABLE ── */
   .inc-table {
@@ -612,6 +708,36 @@
 </div>
 
 
+<!-- ════════════════ SCREEN: ONBOARDING ════════════════ -->
+<div class="screen" id="screen-onboarding">
+  <div class="big-label">Welcome 👋</div>
+  <div class="big-title">Let's set you up</div>
+  <p class="sub">Just two quick details before you see your performance and rank.</p>
+
+  <div class="onb-intro">
+    These details will appear on the leaderboard so other BDEs can recognise you. You only need to fill this once.
+  </div>
+
+  <div id="onbError" class="error-msg"></div>
+
+  <div class="input-wrap">
+    <label>Your Name</label>
+    <input type="text" id="onbDisplayName" placeholder="e.g. Rahul K." autocomplete="off" maxlength="40" />
+  </div>
+
+  <div class="input-wrap">
+    <label>Your Referral Code</label>
+    <input type="text" id="onbRefCode" placeholder="e.g. RAHUL01" autocomplete="off" maxlength="20"
+           oninput="checkRefCodeDuplicate()" style="text-transform:uppercase" />
+  </div>
+  <div id="onbRefWarning" class="onb-warning" style="display:none">
+    ⚠ This referral code is already used by another BDE. You can still continue, but it's better to pick a unique one.
+  </div>
+
+  <button class="btn btn-primary" id="onbSubmitBtn" onclick="submitOnboarding()">Save & Continue →</button>
+</div>
+
+
 <!-- ════════════════ SCREEN: MY PERFORMANCE ════════════════ -->
 <div class="screen" id="screen-performance">
   <div class="big-label" id="perfCampaignLabel">Current Campaign</div>
@@ -646,12 +772,41 @@
 <!-- ════════════════ SCREEN: LEADERBOARD ════════════════ -->
 <div class="screen" id="screen-leaderboard">
   <div class="big-label">Leaderboard</div>
-  <div class="big-title">Top Performers</div>
+  <div class="big-title">Standings</div>
   <p class="sub" id="lbSub">Live ranking — updates every few minutes.</p>
   <div id="lbError" class="error-msg"></div>
   <div id="lbLoading" class="loading"><div class="spinner"></div> Loading leaderboard…</div>
-  <div class="lb-list" id="lbList"></div>
-  <div id="lbPinnedMe"></div>
+
+  <div id="lbContent" style="display:none">
+    <!-- Identity card: name, ref code, national + city ranks -->
+    <div class="lb-identity" id="lbIdentity">
+      <div class="lb-identity-top">
+        <div>
+          <div class="lb-identity-name" id="lbIdentityName">—</div>
+          <div class="lb-identity-code" id="lbIdentityCode">—</div>
+        </div>
+        <div class="lb-identity-city-pill" id="lbIdentityCity" style="display:none">—</div>
+      </div>
+      <div class="lb-identity-ranks" id="lbIdentityRanks">
+        <div class="lb-identity-rank-block">
+          <div class="lb-identity-rank-label">National Rank</div>
+          <div class="lb-identity-rank-value" id="lbIdentityNationalRank">—</div>
+        </div>
+        <div class="lb-identity-rank-block" id="lbIdentityCityBlock">
+          <div class="lb-identity-rank-label" id="lbIdentityCityLabel">City Rank</div>
+          <div class="lb-identity-rank-value" id="lbIdentityCityRank">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toggle: National | City -->
+    <div class="lb-toggle-wrap" id="lbToggleWrap">
+      <button class="lb-toggle-btn active" id="lbToggleNational" onclick="setLeaderboardView('national')">National</button>
+      <button class="lb-toggle-btn" id="lbToggleCity" onclick="setLeaderboardView('city')">City</button>
+    </div>
+
+    <div class="lb-list" id="lbList"></div>
+  </div>
 </div>
 
 
@@ -709,9 +864,13 @@ Snabbit Community Team`;
 let state = {
   agentName:         '',
   agentCode:         '',
+  username:          '',   // needed for onboarding write-back
   blastAccess:       false,
   societyAccess:     false,
   leaderboardAccess: false,
+  onboarded:         false,
+  displayName:       '',   // from column M after onboarding
+  referralCode:      '',   // from column N after onboarding
   userLat:           null,
   userLon:           null,
   database:          [],   // full parsed DB rows
@@ -722,10 +881,12 @@ let state = {
   blastSocietyNM:    '',
   screenHistory:     [],
   nmTab:             'live', // 'live' or 'future'
-  performanceData:   [],   // parsed BDE Performance sheet
+  performanceData:   [],   // parsed BDE Performance sheet (with national + city ranks)
   incentiveSlabs:    [],   // [{recharges, incentive}, ...] sorted desc
   topBonus:          [],   // [{rank, bonus}, ...]
   campaignInfo:      null, // { name, start, end, announcement }
+  lbView:            'national', // 'national' | 'city'
+  userCity:          '',   // derived from logged-in agent's row in performance sheet
 };
 
 
@@ -846,14 +1007,17 @@ async function loadCreds() {
   const h = rows[headerIdx].map(c => c.toLowerCase().trim());
   return {
     rows, headerIdx,
-    uIdx:     h.findIndex(c => c.includes('username')),
-    pIdx:     h.findIndex(c => c.includes('password')),
-    nIdx:     h.findIndex(c => c.includes('agent name') || (c.includes('name') && !c.includes('user'))),
-    cIdx:     h.findIndex(c => c.includes('agent code') || c.includes('code')),
-    aIdx:     h.findIndex(c => c === 'active'),
-    blastIdx: h.findIndex(c => c.includes('blast')),
-    socIdx:   h.findIndex(c => c.includes('society')),
-    lbIdx:    h.findIndex(c => c.includes('leaderboard')),
+    uIdx:           h.findIndex(c => c.includes('username')),
+    pIdx:           h.findIndex(c => c.includes('password')),
+    nIdx:           h.findIndex(c => c.includes('agent name') || (c.includes('name') && !c.includes('user') && !c.includes('display'))),
+    cIdx:           h.findIndex(c => c.includes('agent code') || c.includes('code')),
+    aIdx:           h.findIndex(c => c === 'active'),
+    blastIdx:       h.findIndex(c => c.includes('blast')),
+    socIdx:         h.findIndex(c => c.includes('society')),
+    lbIdx:          h.findIndex(c => c.includes('leaderboard')),
+    onbIdx:         h.findIndex(c => c.includes('onboard')),
+    dispNameIdx:    h.findIndex((c, i) => i > 0 && c === 'name'),
+    refCodeIdx:     h.findIndex(c => c.includes('ref code') || c.includes('referral')),
   };
 }
 
@@ -869,7 +1033,7 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx } = await loadCreds();
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, onbIdx, dispNameIdx, refCodeIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
       String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
       String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
@@ -878,13 +1042,30 @@ async function doLogin() {
       showError('loginError', 'Invalid username or password. Please try again.');
       btn.disabled = false; btn.textContent = 'Sign In →'; return;
     }
+    state.username          = username.toLowerCase().trim();
     state.agentName         = match[nIdx] || username;
     state.agentCode         = match[cIdx] || username;
     state.blastAccess       = toBoolean(match[blastIdx]);
     state.societyAccess     = toBoolean(match[socIdx]);
     state.leaderboardAccess = lbIdx >= 0 ? toBoolean(match[lbIdx]) : false;
+    state.onboarded         = onbIdx >= 0 ? toBoolean(match[onbIdx]) : false;
+    state.displayName       = dispNameIdx >= 0 ? String(match[dispNameIdx] || '').trim() : '';
+    state.referralCode      = refCodeIdx >= 0 ? String(match[refCodeIdx] || '').trim() : '';
+
+    // If user has leaderboard access but never onboarded AND has no name in column M,
+    // force them through the one-time onboarding form before home.
+    const needsOnboarding = state.leaderboardAccess && !state.onboarded && !state.displayName;
+
     saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess);
-    onLoggedIn();
+    if (needsOnboarding) {
+      // Cache duplicates list for warning before they pick a code.
+      state._allRefCodes = rows.slice(headerIdx + 1)
+        .map(r => refCodeIdx >= 0 ? String(r[refCodeIdx] || '').trim().toLowerCase() : '')
+        .filter(c => c !== '');
+      showOnboardingScreen();
+    } else {
+      onLoggedIn();
+    }
   } catch(e) {
     if (e.message === 'SHEET_ACCESS_DENIED') {
       showError('loginError', 'Login sheet is not accessible. Please contact your admin to share the credentials sheet.');
@@ -912,7 +1093,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabs:[], topBonus:[], campaignInfo:null };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabs:[], topBonus:[], campaignInfo:null, lbView:'national', userCity:'' };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -1466,12 +1647,84 @@ async function confirmSendWhatsApp() {
 
 
 // ─────────────────────────────────────────────────────────
+// ONBOARDING — one-time form for first-time leaderboard users.
+// Writes Onboarded=TRUE, Display Name, Ref Code to columns L, M, N
+// of the credentials sheet via Apps Script (action: submitOnboarding).
+// ─────────────────────────────────────────────────────────
+
+function showOnboardingScreen() {
+  document.getElementById('agentBadge').style.display = 'none';
+  document.getElementById('onbDisplayName').value = '';
+  document.getElementById('onbRefCode').value = '';
+  document.getElementById('onbRefWarning').style.display = 'none';
+  hideMsg('onbError');
+  document.getElementById('backBtn').classList.remove('visible'); // can't go back from onboarding
+  showScreen('screen-onboarding');
+}
+
+function checkRefCodeDuplicate() {
+  const input = document.getElementById('onbRefCode');
+  const val   = input.value.trim().toLowerCase();
+  const list  = state._allRefCodes || [];
+  const warn  = document.getElementById('onbRefWarning');
+  if (val && list.includes(val)) {
+    warn.style.display = 'block';
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+async function submitOnboarding() {
+  const displayName  = document.getElementById('onbDisplayName').value.trim();
+  const referralCode = document.getElementById('onbRefCode').value.trim().toUpperCase();
+  const btn          = document.getElementById('onbSubmitBtn');
+  hideMsg('onbError');
+
+  if (!displayName) {
+    showError('onbError', 'Please enter your name.');
+    return;
+  }
+  if (displayName.length < 2) {
+    showError('onbError', 'Name must be at least 2 characters.');
+    return;
+  }
+  if (!referralCode) {
+    showError('onbError', 'Please enter your referral code.');
+    return;
+  }
+  if (referralCode.length < 3) {
+    showError('onbError', 'Referral code must be at least 3 characters.');
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await postToScript({
+      action:       'submitOnboarding',
+      username:     state.username,
+      displayName:  displayName,
+      referralCode: referralCode,
+    });
+    // Apps Script writes are no-cors (fire-and-forget). Optimistically update local state.
+    state.onboarded    = true;
+    state.displayName  = displayName;
+    state.referralCode = referralCode;
+    state.agentName    = displayName; // use display name as the leaderboard name going forward
+    onLoggedIn();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = 'Save & Continue →';
+    showError('onbError', 'Could not save. Check your internet and try again.');
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────
 // PERFORMANCE / LEADERBOARD / INCENTIVE
 // All reads use the same gviz CSV pattern as loadCreds.
 // Sheets must be shared with "Anyone with the link — Viewer".
 // ─────────────────────────────────────────────────────────
 
-// Fetch the BDE Performance sheet (Agent Code | Recharges | Last Updated).
+// Fetch the BDE Performance sheet (Agent Code | Agent Name | City | Recharges | Last Updated).
 async function loadPerformance() {
   const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/gviz/tq?tqx=out:csv`;
   const res  = await fetch(url);
@@ -1485,23 +1738,47 @@ async function loadPerformance() {
   const h = rows[headerIdx].map(c => c.toLowerCase().trim());
   const codeIdx = h.findIndex(c => c.includes('agent code') || c.includes('agent_code') || c === 'code');
   const rechIdx = h.findIndex(c => c.includes('recharge'));
-  const nameIdx = h.findIndex(c => c.includes('name'));   // optional
+  const nameIdx = h.findIndex(c => c.includes('name'));
+  const cityIdx = h.findIndex(c => c === 'city' || c.includes('city'));
   const data = rows.slice(headerIdx + 1)
     .filter(r => r[codeIdx] && String(r[codeIdx]).trim() !== '')
     .map(r => ({
       agentCode: String(r[codeIdx]).trim(),
       agentName: nameIdx >= 0 ? String(r[nameIdx] || '').trim() : '',
+      city:      cityIdx >= 0 ? String(r[cityIdx] || '').trim() : '',
       recharges: parseInt(String(r[rechIdx] || '0').replace(/[^0-9-]/g, ''), 10) || 0,
     }));
-  // Sort once, descending — used for leaderboard and rank lookup.
+
+  // National ranking (sort once, descending; ties get the same rank).
   data.sort((a, b) => b.recharges - a.recharges);
-  // Assign rank (ties get the same rank).
   let lastRech = null, lastRank = 0;
   data.forEach((d, i) => {
     if (d.recharges !== lastRech) { lastRank = i + 1; lastRech = d.recharges; }
-    d.rank = lastRank;
+    d.rank = lastRank; // national rank
   });
+
+  // City ranking — group by city, rank within each.
+  const byCity = {};
+  data.forEach(d => {
+    if (!d.city) return;
+    (byCity[d.city] = byCity[d.city] || []).push(d);
+  });
+  Object.values(byCity).forEach(group => {
+    group.sort((a, b) => b.recharges - a.recharges);
+    let lr = null, lrank = 0;
+    group.forEach((d, i) => {
+      if (d.recharges !== lr) { lrank = i + 1; lr = d.recharges; }
+      d.cityRank = lrank;
+      d.cityTotal = group.length;
+    });
+  });
+
   state.performanceData = data;
+
+  // Cache the logged-in user's city for toggle visibility.
+  const me = data.find(d => d.agentCode === state.agentCode);
+  state.userCity = me && me.city ? me.city : '';
+
   return data;
 }
 
@@ -1647,11 +1924,12 @@ function renderPerformance() {
 async function openLeaderboard() {
   navigate('screen-leaderboard');
   document.getElementById('lbLoading').style.display = 'flex';
-  document.getElementById('lbList').innerHTML = '';
-  document.getElementById('lbPinnedMe').innerHTML = '';
+  document.getElementById('lbContent').style.display = 'none';
   hideMsg('lbError');
   try {
     if (state.performanceData.length === 0) await loadPerformance();
+    // Default view: city if user has a city, otherwise national.
+    state.lbView = state.userCity ? 'city' : 'national';
     renderLeaderboard();
   } catch (e) {
     document.getElementById('lbLoading').style.display = 'none';
@@ -1659,40 +1937,120 @@ async function openLeaderboard() {
   }
 }
 
+function setLeaderboardView(view) {
+  state.lbView = view;
+  document.getElementById('lbToggleNational').classList.toggle('active', view === 'national');
+  document.getElementById('lbToggleCity').classList.toggle('active', view === 'city');
+  renderLeaderboardList();
+}
+
 function renderLeaderboard() {
-  const top = state.performanceData.slice(0, 10);
+  // 1) Identity card (always visible at top — name, ref code, ranks)
+  const me = state.performanceData.find(d => d.agentCode === state.agentCode);
+  const myDisplayName = state.displayName || state.agentName || '—';
+  document.getElementById('lbIdentityName').textContent = myDisplayName;
+  document.getElementById('lbIdentityCode').textContent = state.referralCode
+    ? `${state.agentCode} · ${state.referralCode}`
+    : state.agentCode || '—';
+
+  const cityPill = document.getElementById('lbIdentityCity');
+  const cityBlock = document.getElementById('lbIdentityCityBlock');
+  const ranksWrap = document.getElementById('lbIdentityRanks');
+
+  if (state.userCity) {
+    cityPill.textContent = state.userCity;
+    cityPill.style.display = 'inline-block';
+    cityBlock.style.display = 'block';
+    ranksWrap.classList.remove('single');
+    document.getElementById('lbIdentityCityLabel').textContent = `${state.userCity} Rank`;
+    if (me && me.cityRank) {
+      document.getElementById('lbIdentityCityRank').innerHTML =
+        `${me.cityRank}<span class="rank-of">/ ${me.cityTotal}</span>`;
+    } else {
+      document.getElementById('lbIdentityCityRank').textContent = '—';
+    }
+  } else {
+    cityPill.style.display = 'none';
+    cityBlock.style.display = 'none';
+    ranksWrap.classList.add('single');
+  }
+
+  if (me) {
+    document.getElementById('lbIdentityNationalRank').innerHTML =
+      `${me.rank}<span class="rank-of">/ ${state.performanceData.length}</span>`;
+  } else {
+    document.getElementById('lbIdentityNationalRank').textContent = '—';
+  }
+
+  // 2) Toggle visibility — hide city tab if no city
+  const toggleWrap = document.getElementById('lbToggleWrap');
+  if (state.userCity) {
+    toggleWrap.style.display = 'flex';
+    document.getElementById('lbToggleNational').classList.toggle('active', state.lbView === 'national');
+    document.getElementById('lbToggleCity').classList.toggle('active', state.lbView === 'city');
+    document.getElementById('lbToggleCity').textContent = state.userCity;
+  } else {
+    toggleWrap.style.display = 'none';
+    state.lbView = 'national';
+  }
+
+  // 3) The list itself
+  renderLeaderboardList();
+
+  document.getElementById('lbLoading').style.display = 'none';
+  document.getElementById('lbContent').style.display = 'block';
+}
+
+function renderLeaderboardList() {
   const list = document.getElementById('lbList');
+
+  // Pick the dataset based on view.
+  let pool, rankKey, totalCount;
+  if (state.lbView === 'city' && state.userCity) {
+    pool = state.performanceData
+      .filter(d => d.city === state.userCity)
+      .sort((a, b) => b.recharges - a.recharges);
+    rankKey = 'cityRank';
+    totalCount = pool.length;
+    document.getElementById('lbSub').textContent =
+      `Top performers in ${state.userCity} · ${totalCount} BDEs`;
+  } else {
+    pool = state.performanceData; // already sorted nationally in loadPerformance
+    rankKey = 'rank';
+    totalCount = pool.length;
+    document.getElementById('lbSub').textContent =
+      `Top performers across India · ${totalCount} BDEs`;
+  }
+
+  const top = pool.slice(0, 10);
+  if (top.length === 0) {
+    list.innerHTML = `<div class="lb-empty">No data yet for this view.</div>`;
+    return;
+  }
+
   list.innerHTML = top.map(d => {
     const isMe = d.agentCode === state.agentCode;
-    const rankClass = d.rank === 1 ? 'top1' : d.rank === 2 ? 'top2' : d.rank === 3 ? 'top3' : '';
-    const medal = d.rank === 1 ? '🥇' : d.rank === 2 ? '🥈' : d.rank === 3 ? '🥉' : '';
-    const displayName = d.agentName || d.agentCode;
+    const displayName = isMe
+      ? (state.displayName || d.agentName || d.agentCode)
+      : (d.agentName || d.agentCode);
+    const cityMeta = d.city ? `<span class="dot">·</span><span>${d.city}</span>` : '';
     return `
       <div class="lb-row${isMe ? ' lb-me' : ''}">
-        <div class="lb-rank ${rankClass}">${medal || '#' + d.rank}</div>
-        <div class="lb-name">${displayName}${isMe ? ' (You)' : ''}</div>
-        <div class="lb-recharges">${d.recharges}</div>
+        <div class="lb-rank-tile">${d[rankKey]}</div>
+        <div class="lb-info">
+          <div class="lb-info-name">${displayName}${isMe ? ' · You' : ''}</div>
+          <div class="lb-info-meta">
+            <span>${d.agentCode}</span>
+            ${cityMeta}
+          </div>
+        </div>
+        <div>
+          <div class="lb-recharges">${d.recharges}</div>
+          <span class="lb-recharges-label">recharges</span>
+        </div>
       </div>
     `;
   }).join('');
-  document.getElementById('lbSub').textContent = `Showing top 10 of ${state.performanceData.length} BDEs`;
-
-  // Pinned "you" row only if user is outside top 10.
-  const me = state.performanceData.find(d => d.agentCode === state.agentCode);
-  const meInTop10 = top.some(d => d.agentCode === state.agentCode);
-  const pinned = document.getElementById('lbPinnedMe');
-  if (me && !meInTop10) {
-    pinned.innerHTML = `
-      <div class="lb-pinned-me">
-        <div class="lb-rank">#${me.rank}</div>
-        <div class="lb-name">You · ${state.agentName.split(' ')[0]}</div>
-        <div class="lb-recharges">${me.recharges}</div>
-      </div>
-    `;
-  } else {
-    pinned.innerHTML = '';
-  }
-  document.getElementById('lbLoading').style.display = 'none';
 }
 
 // Incentive info screen.
