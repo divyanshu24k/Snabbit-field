@@ -990,11 +990,12 @@ function toBoolean(val) {
 
 
 // ─────────────────────────────────────────────────────────
-// CREDENTIALS — gviz read
-// Columns: S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access
+// CREDENTIALS — uses /export?format=csv (more reliable than gviz
+// when sheet has empty columns or unusual formatting).
+// Columns: S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access | Leaderboard Access | Onboarded | Name | Ref Code
 // ─────────────────────────────────────────────────────────
 async function loadCreds() {
-  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.CREDS_SHEET_ID}/gviz/tq?tqx=out:csv`;
+  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.CREDS_SHEET_ID}/export?format=csv&gid=0`;
   const res  = await fetch(url);
   const text = await res.text();
   // If response is HTML it means the sheet is not publicly shared
@@ -1429,7 +1430,7 @@ function showNewForm() {
 
 async function checkIfAlreadySubmitted(societyName) {
   try {
-    const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.SUBMIT_SHEET_ID}/gviz/tq?tqx=out:csv`;
+    const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.SUBMIT_SHEET_ID}/export?format=csv&gid=0`;
     const res  = await fetch(url);
     const text = await res.text();
     const rows = parseCSV(text);
@@ -1720,13 +1721,14 @@ async function submitOnboarding() {
 
 // ─────────────────────────────────────────────────────────
 // PERFORMANCE / LEADERBOARD / INCENTIVE
-// All reads use the same gviz CSV pattern as loadCreds.
+// Single-tab reads use /export?format=csv (more reliable).
+// Multi-tab reads (Incentive Config) keep gviz with &sheet= param.
 // Sheets must be shared with "Anyone with the link — Viewer".
 // ─────────────────────────────────────────────────────────
 
 // Fetch the BDE Performance sheet (Agent Code | Agent Name | City | Recharges | Last Updated).
 async function loadPerformance() {
-  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/gviz/tq?tqx=out:csv`;
+  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/export?format=csv&gid=0`;
   const res  = await fetch(url);
   const text = await res.text();
   if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
