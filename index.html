@@ -7,8 +7,40 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 5.1
+  VERSION     : 5.2
   LAST UPDATED: May 2026
+
+  CHANGES IN v5.2:
+    1. Removed "Current Campaign" header from My Performance screen
+       (perfCampaignLabel/Name/Dates elements deleted; screen now opens
+        directly into the recharge hero card)
+    2. City-specific incentive plans — Slabs and Bonus tabs now have a
+       City column. Rows with City=ALL are defaults; city-specific rows
+       (e.g. "Bangalore") override. Helpers slabsForCity() and
+       bonusForCity() filter by state.userCity (case-insensitive) with
+       fallback to ALL. calcIncentive/nextSlab/calcBonus now use these.
+       Incentive Info screen shows the city-specific tables with a
+       "Plan for {City}" subtitle when a match is found.
+    3. Slab-nudge card on My Performance — new soft-pink card right
+       below the recharge hero, above the stats row. Tells the user
+       how many more recharges to the next slab and how much extra
+       they'll earn. Only renders on the Today tab.
+    4. Title-case city names everywhere — new titleCaseCity() helper
+       handles cities like "navi mumbai" → "Navi Mumbai", with an
+       acronym set (NCR, BTM, HSR, JP, CBD, IT) preserved uppercase.
+       Applied to leaderboard rows, identity card pill, city rank
+       label, society cards, and dropdowns.
+    5. Historical recharges — 4-tab strip (Today / Yesterday / Week /
+       Month) at the top of the recharge stat. Today uses the live
+       snapshot value; Yesterday/Week/Month aggregate from the
+       BDE_Daily_Performance tab in the same Performance sheet (Excel
+       serial date in 'dt' column, summed by ref_code). Cached once
+       per session. Slab-nudge card only renders on Today.
+    6. Leaderboard section labels — clean section header instead of
+       the "X BDEs" copy. National view: "Top Performer Across India".
+       City view: "Top Performer in {City}" (title-cased).
+    7. "National" → "Pan India" — UI rename in identity card label
+       and toggle button. Internal state.lbView value stays 'national'.
 
   CHANGES IN v5.1:
     - Added Slot Checker feature (read-only hood-level live stats)
@@ -334,6 +366,42 @@
   .perf-action-btn:hover { border-color: var(--accent); }
   .perf-action-btn .arrow { color: var(--accent); font-weight: 800; }
 
+  /* ── PERIOD TAB STRIP (Today / Yesterday / Week / Month) ── */
+  .perf-period-tabs {
+    background: var(--surface2); border: 1.5px solid var(--border);
+    border-radius: 14px; padding: 4px; display: flex; gap: 4px;
+    margin-bottom: 12px;
+  }
+  .perf-period-btn {
+    flex: 1; background: transparent; border: none; cursor: pointer;
+    padding: 9px 8px; border-radius: 10px;
+    font-family: 'Nunito', sans-serif; font-size: 12px; font-weight: 700;
+    color: var(--muted); transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .perf-period-btn.active {
+    background: var(--surface); color: var(--navy);
+    box-shadow: 0 1px 3px rgba(30,27,75,0.08);
+  }
+
+  /* ── SLAB NUDGE CARD ── */
+  .perf-slab-nudge {
+    background: linear-gradient(135deg, #FFF0F6 0%, #FFE4EE 100%);
+    border: 1.5px solid var(--border);
+    border-radius: 16px; padding: 14px 16px; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .perf-slab-nudge-icon {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .perf-slab-nudge-text {
+    font-size: 14px; font-weight: 700; color: var(--navy);
+    line-height: 1.35;
+  }
+
   /* ── ONBOARDING ── */
   .onb-intro {
     background: var(--surface2); border: 1.5px solid var(--border);
@@ -464,6 +532,10 @@
   .inc-row .inc-key   { font-size: 14px; font-weight: 700; color: var(--navy); }
   .inc-row .inc-val   { font-size: 16px; font-weight: 800; color: var(--accent); }
   .inc-row.inc-header .inc-key, .inc-row.inc-header .inc-val { font-size: 11px; color: var(--muted); }
+  .inc-subtitle {
+    font-size: 12px; font-weight: 700; color: var(--accent);
+    letter-spacing: 0.5px; margin: -8px 0 14px;
+  }
 
   /* ── SLOT CHECKER ── */
   .slot-result-header {
@@ -780,19 +852,31 @@
 
 <!-- ════════════════ SCREEN: MY PERFORMANCE ════════════════ -->
 <div class="screen" id="screen-performance">
-  <div class="big-label" id="perfCampaignLabel">Current Campaign</div>
-  <div class="big-title" id="perfCampaignName">Loading…</div>
-  <p class="sub" id="perfCampaignDates">—</p>
   <div id="perfError" class="error-msg"></div>
   <div id="perfLoading" class="loading"><div class="spinner"></div> Loading your stats…</div>
 
   <div id="perfContent" style="display:none">
+
+    <!-- Period tabs (Today / Yesterday / Week / Month) -->
+    <div class="perf-period-tabs" id="perfPeriodTabs">
+      <button class="perf-period-btn active" data-period="today"     onclick="setPerfPeriod('today')">Today</button>
+      <button class="perf-period-btn"        data-period="yesterday" onclick="setPerfPeriod('yesterday')">Yesterday</button>
+      <button class="perf-period-btn"        data-period="week"      onclick="setPerfPeriod('week')">Week</button>
+      <button class="perf-period-btn"        data-period="month"     onclick="setPerfPeriod('month')">Month</button>
+    </div>
+
     <div class="perf-hero">
-      <div class="perf-hero-label">Recharges this campaign</div>
+      <div class="perf-hero-label" id="perfHeroLabel">Recharges today</div>
       <div class="perf-hero-number" id="perfRecharges">0</div>
       <div class="perf-hero-sub" id="perfNextSlab">—</div>
       <div class="perf-progress-wrap"><div class="perf-progress-fill" id="perfProgressFill" style="width:0%"></div></div>
       <div class="perf-progress-text" id="perfProgressText">—</div>
+    </div>
+
+    <!-- Slab nudge card — only on Today tab -->
+    <div class="perf-slab-nudge" id="perfSlabNudge" style="display:none">
+      <div class="perf-slab-nudge-icon">⚡</div>
+      <div class="perf-slab-nudge-text" id="perfSlabNudgeText">—</div>
     </div>
 
     <div class="perf-stats-row">
@@ -829,7 +913,7 @@
       </div>
       <div class="lb-identity-ranks" id="lbIdentityRanks">
         <div class="lb-identity-rank-block">
-          <div class="lb-identity-rank-label">National Rank</div>
+          <div class="lb-identity-rank-label">Pan India Rank</div>
           <div class="lb-identity-rank-value" id="lbIdentityNationalRank">—</div>
         </div>
         <div class="lb-identity-rank-block" id="lbIdentityCityBlock">
@@ -839,9 +923,9 @@
       </div>
     </div>
 
-    <!-- Toggle: National | City -->
+    <!-- Toggle: Pan India | City -->
     <div class="lb-toggle-wrap" id="lbToggleWrap">
-      <button class="lb-toggle-btn active" id="lbToggleNational" onclick="setLeaderboardView('national')">National</button>
+      <button class="lb-toggle-btn active" id="lbToggleNational" onclick="setLeaderboardView('national')">Pan India</button>
       <button class="lb-toggle-btn" id="lbToggleCity" onclick="setLeaderboardView('city')">City</button>
     </div>
 
@@ -855,6 +939,7 @@
   <div class="big-label">Incentive Structure</div>
   <div class="big-title">How You Earn</div>
   <p class="sub">Hit a slab and earn the matching incentive. Top 3 ranks get extra bonus.</p>
+  <div class="inc-subtitle" id="incSubtitle" style="display:none">—</div>
   <div id="incError" class="error-msg"></div>
 
   <div class="perf-section-label">Recharge Slabs</div>
@@ -943,6 +1028,25 @@ Snabbit Community Team`;
 
 
 // ─────────────────────────────────────────────────────────
+// CITY TITLE-CASE HELPER (v5.2)
+// City names in the Performance sheet are stored lowercase
+// ("hyderabad", "navi mumbai", "delhi"). Render them properly cased
+// throughout the UI. Some tokens stay uppercase (NCR, BTM, HSR, JP, etc).
+// ─────────────────────────────────────────────────────────
+const CITY_ACRONYMS = new Set(['NCR', 'BTM', 'HSR', 'JP', 'CBD', 'IT']);
+function titleCaseCity(raw) {
+  if (!raw) return '';
+  const s = String(raw).trim();
+  if (!s || s === '#N/A' || s.startsWith('#')) return s;
+  return s.split(/\s+/).map(w => {
+    if (!w) return '';
+    if (CITY_ACRONYMS.has(w.toUpperCase())) return w.toUpperCase();
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  }).join(' ');
+}
+
+
+// ─────────────────────────────────────────────────────────
 // APP STATE
 // ─────────────────────────────────────────────────────────
 let state = {
@@ -967,14 +1071,20 @@ let state = {
   screenHistory:     [],
   nmTab:             'live', // 'live' or 'future'
   performanceData:   [],   // parsed BDE Performance sheet (with national + city ranks)
-  incentiveSlabs:    [],   // [{recharges, incentive}, ...] sorted desc
-  topBonus:          [],   // [{rank, bonus}, ...]
+  // v5.2: incentive slabs/bonuses now hold ALL rows (with city); use
+  // slabsForCity() / bonusForCity() to filter.
+  incentiveSlabsAll: [],   // [{city, recharges, incentive}, ...]
+  topBonusAll:       [],   // [{city, rank, bonus}, ...]
   campaignInfo:      null, // { name, start, end, announcement }
   lbView:            'national', // 'national' | 'city'
-  userCity:          '',   // derived from logged-in agent's row in performance sheet
+  userCity:          '',   // derived from logged-in agent's row in performance sheet (raw, lowercase)
   slotData:          [],   // parsed slot-checker rows: [{hood, jobs, experts, utilization}, ...]
   slotDataLoaded:    false,
   selectedSlotHood:  null,
+  // v5.2: historical recharges
+  perfPeriod:        'today',  // 'today' | 'yesterday' | 'week' | 'month'
+  dailyData:         [],       // parsed BDE_Daily_Performance rows
+  dailyDataLoaded:   false,
 };
 
 
@@ -1199,7 +1309,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabs:[], topBonus:[], campaignInfo:null, lbView:'national', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -1344,10 +1454,18 @@ async function loadDatabase() {
 // NM SOCIETY LIST — city + NM filter
 // ─────────────────────────────────────────────────────────
 function populateCityDropdown() {
-  const cities = [...new Set(state.database.map(s => s.city).filter(Boolean))].sort();
+  // Collect raw cities (case-insensitive dedup) and display them title-cased.
+  const seen = new Map(); // key: lower-case, value: raw
+  state.database.forEach(s => {
+    if (s.city) {
+      const k = s.city.toLowerCase();
+      if (!seen.has(k)) seen.set(k, s.city);
+    }
+  });
+  const cities = [...seen.values()].sort((a, b) => titleCaseCity(a).localeCompare(titleCaseCity(b)));
   const sel    = document.getElementById('nmCitySelect');
   sel.innerHTML = '<option value="">— Select City —</option>' +
-    cities.map(c => `<option value="${c}">${c}</option>`).join('');
+    cities.map(c => `<option value="${c}">${titleCaseCity(c)}</option>`).join('');
 }
 
 function onNMCityChange() {
@@ -1495,7 +1613,7 @@ function renderResults(nearby) {
         <div class="s-name">${s.name}</div>
         <div class="s-meta">
           ${s.area ? `<span>📍 ${s.area}</span>` : ''}
-          ${s.city ? `<span>${s.city}</span>` : ''}
+          ${s.city ? `<span>${titleCaseCity(s.city)}</span>` : ''}
         </div>
         <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
           ${s.liveNM   ? `<span class="s-nm">${s.liveNM}</span>` : ''}
@@ -1673,7 +1791,7 @@ function onBlastSearch() {
       ${s.name}
       <div class="society-result-sector">
         ${s.liveNM ? `NM: ${s.liveNM}` : ''}
-        ${s.city   ? ` · ${s.city}`    : ''}
+        ${s.city   ? ` · ${titleCaseCity(s.city)}`    : ''}
       </div>
     </div>
   `).join('') + (matches.length > CONFIG.MAX_SEARCH_RESULTS
@@ -1828,7 +1946,7 @@ async function submitOnboarding() {
 // ─────────────────────────────────────────────────────────
 // PERFORMANCE / LEADERBOARD / INCENTIVE
 // Single-tab reads use /export?format=csv (more reliable).
-// Multi-tab reads (Incentive Config) keep gviz with &sheet= param.
+// Multi-tab reads (Incentive Config, Daily Performance) use gviz with &sheet= param.
 // Sheets must be shared with "Anyone with the link — Viewer".
 // ─────────────────────────────────────────────────────────
 
@@ -1871,11 +1989,12 @@ async function loadPerformance() {
     d.rank = lastRank; // national rank
   });
 
-  // City ranking — group by city, rank within each.
+  // City ranking — group by city (case-insensitive), rank within each.
   const byCity = {};
   data.forEach(d => {
     if (!d.city) return;
-    (byCity[d.city] = byCity[d.city] || []).push(d);
+    const k = d.city.toLowerCase();
+    (byCity[k] = byCity[k] || []).push(d);
   });
   Object.values(byCity).forEach(group => {
     group.sort((a, b) => b.recharges - a.recharges);
@@ -1896,7 +2015,124 @@ async function loadPerformance() {
   return data;
 }
 
-// Fetch the Incentive Config sheet — three tabs: Active, Slabs, Bonus.
+// ─────────────────────────────────────────────────────────
+// HISTORICAL RECHARGES — BDE_Daily_Performance tab (v5.2)
+// Columns: dt, region, cluster, hood, TL_name, referral_name,
+//          ref_code, distinct_customers, manager, name
+// dt is an Excel serial date — convert via 1899-12-30 epoch.
+// Cached once per session.
+// ─────────────────────────────────────────────────────────
+function excelSerialToDate(serial) {
+  const n = parseFloat(serial);
+  if (isNaN(n)) return null;
+  // Excel/Sheets epoch is 1899-12-30 (handles the 1900 leap-year bug correctly).
+  const ms = (n * 86400 * 1000);
+  return new Date(Date.UTC(1899, 11, 30) + ms);
+}
+
+async function loadDailyPerformance() {
+  if (state.dailyDataLoaded) return;
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=BDE_Daily_Performance`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('DAILY_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
+  // Header row contains 'dt' and 'ref_code'.
+  const headerIdx = rows.findIndex(r =>
+    r.some(c => c.toLowerCase().trim() === 'dt') &&
+    r.some(c => c.toLowerCase().trim() === 'ref_code')
+  );
+  if (headerIdx === -1) throw new Error('Daily performance header not found');
+  const h = rows[headerIdx].map(c => c.toLowerCase().trim());
+
+  const iDt   = h.findIndex(c => c === 'dt');
+  const iRef  = h.findIndex(c => c === 'ref_code');
+  const iCust = h.findIndex(c => c === 'distinct_customers' || c.includes('distinct_customer'));
+
+  state.dailyData = rows.slice(headerIdx + 1)
+    .filter(r => r[iDt] && r[iRef])
+    .map(r => {
+      const date = excelSerialToDate(r[iDt]);
+      return {
+        date,
+        refCode:   String(r[iRef] || '').trim(),
+        customers: parseInt(String(r[iCust] || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+      };
+    })
+    .filter(d => d.date instanceof Date && !isNaN(d.date.getTime()));
+
+  state.dailyDataLoaded = true;
+  console.log(`Daily perf loaded: ${state.dailyData.length} rows`);
+}
+
+// Get the start of "today" in local time (midnight).
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Date range for a given period; returns {start, end} (end exclusive) or null for 'today'.
+function periodRange(period) {
+  const today = startOfToday();
+  if (period === 'yesterday') {
+    const start = new Date(today); start.setDate(start.getDate() - 1);
+    const end   = new Date(today); // yesterday's end is today's start
+    return { start, end };
+  }
+  if (period === 'week') {
+    // Current week starts on Monday.
+    const start = new Date(today);
+    const dow = (start.getDay() + 6) % 7; // Mon=0, Sun=6
+    start.setDate(start.getDate() - dow);
+    const end = new Date(today); end.setDate(end.getDate() + 1); // include today
+    return { start, end };
+  }
+  if (period === 'month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end   = new Date(today); end.setDate(end.getDate() + 1); // include today
+    return { start, end };
+  }
+  return null;
+}
+
+// Sum recharges from BDE_Daily_Performance for the agent within a date range.
+function aggregateRecharges(period) {
+  const me = state.performanceData.find(d => d.agentCode === state.agentCode);
+  // Compare by ref code. Fall back to onboarding-collected ref code if needed.
+  const myRefCode = (me && me.refCode) || state.referralCode || '';
+  if (!myRefCode) return 0;
+
+  const range = periodRange(period);
+  if (!range) return 0;
+
+  // Excel serial dates from gviz are at UTC midnight. Compare against UTC range
+  // bounds derived from local midnights — this matches the user's perception of
+  // "yesterday/this week/this month" in their timezone.
+  // We compare `date >= start && date < end` using YYYY-MM-DD strings to avoid
+  // tz drift.
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const startKey = fmt(range.start);
+  const endKey   = fmt(range.end);
+
+  let sum = 0;
+  for (const r of state.dailyData) {
+    if (r.refCode !== myRefCode) continue;
+    // The Excel serial gives us a UTC date — pull its YYYY-MM-DD parts and compare.
+    const k = `${r.date.getUTCFullYear()}-${String(r.date.getUTCMonth()+1).padStart(2,'0')}-${String(r.date.getUTCDate()).padStart(2,'0')}`;
+    if (k >= startKey && k < endKey) sum += r.customers;
+  }
+  return sum;
+}
+
+// ─────────────────────────────────────────────────────────
+// INCENTIVE CONFIG — v5.2 city-aware loader.
+// Slabs:  City | Recharges | Incentive
+// Bonus:  City | Rank | Bonus
+// Rows with City=ALL are defaults; specific cities override.
+// ─────────────────────────────────────────────────────────
 async function loadIncentiveConfig() {
   const base = `https://docs.google.com/spreadsheets/d/${CONFIG.INCENTIVE_CONFIG_SHEET_ID}/gviz/tq?tqx=out:csv`;
   const [activeText, slabsText, bonusText] = await Promise.all([
@@ -1920,46 +2156,118 @@ async function loadIncentiveConfig() {
   });
   state.campaignInfo = info;
 
-  // Slabs tab — Recharges | Incentive
+  // Slabs tab — City | Recharges | Incentive
   const slabRows = parseCSV(slabsText);
   const slabHeaderIdx = slabRows.findIndex(r => r.some(c => c.toLowerCase().includes('recharge')));
-  const slabs = slabRows.slice(slabHeaderIdx + 1)
-    .filter(r => r[0] && !isNaN(parseInt(r[0])))
-    .map(r => ({ recharges: parseInt(r[0], 10), incentive: parseInt(String(r[1] || '0').replace(/[^0-9-]/g, ''), 10) || 0 }))
-    .sort((a, b) => b.recharges - a.recharges); // highest first
-  state.incentiveSlabs = slabs;
+  const slabHeader = slabHeaderIdx >= 0 ? slabRows[slabHeaderIdx].map(c => c.toLowerCase().trim()) : [];
+  const sCityIdx = slabHeader.findIndex(c => c === 'city');
+  const sRechIdx = slabHeader.findIndex(c => c.includes('recharge'));
+  const sIncIdx  = slabHeader.findIndex(c => c.includes('incentive'));
 
-  // Bonus tab — Rank | Bonus
+  state.incentiveSlabsAll = slabRows.slice(slabHeaderIdx + 1)
+    .filter(r => {
+      const rechCell = sRechIdx >= 0 ? r[sRechIdx] : r[0];
+      return rechCell && !isNaN(parseInt(rechCell));
+    })
+    .map(r => ({
+      city:      sCityIdx >= 0 ? String(r[sCityIdx] || 'ALL').trim() : 'ALL',
+      recharges: parseInt(sRechIdx >= 0 ? r[sRechIdx] : r[0], 10),
+      incentive: parseInt(String((sIncIdx >= 0 ? r[sIncIdx] : r[1]) || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+    }));
+
+  // Bonus tab — City | Rank | Bonus
   const bonusRows = parseCSV(bonusText);
   const bonusHeaderIdx = bonusRows.findIndex(r => r.some(c => c.toLowerCase().includes('rank')));
-  const bonuses = bonusRows.slice(bonusHeaderIdx + 1)
-    .filter(r => r[0] && !isNaN(parseInt(r[0])))
-    .map(r => ({ rank: parseInt(r[0], 10), bonus: parseInt(String(r[1] || '0').replace(/[^0-9-]/g, ''), 10) || 0 }))
-    .sort((a, b) => a.rank - b.rank);
-  state.topBonus = bonuses;
+  const bonusHeader = bonusHeaderIdx >= 0 ? bonusRows[bonusHeaderIdx].map(c => c.toLowerCase().trim()) : [];
+  const bCityIdx = bonusHeader.findIndex(c => c === 'city');
+  const bRankIdx = bonusHeader.findIndex(c => c.includes('rank'));
+  const bBonusIdx = bonusHeader.findIndex(c => c.includes('bonus'));
+
+  state.topBonusAll = bonusRows.slice(bonusHeaderIdx + 1)
+    .filter(r => {
+      // Rank column may say "Top 1" / "1" — extract the numeric.
+      const rankCell = bRankIdx >= 0 ? r[bRankIdx] : r[0];
+      return rankCell && /\d/.test(String(rankCell));
+    })
+    .map(r => ({
+      city:  bCityIdx >= 0 ? String(r[bCityIdx] || 'ALL').trim() : 'ALL',
+      rank:  parseInt(String((bRankIdx >= 0 ? r[bRankIdx] : r[0]) || '').replace(/[^0-9]/g, ''), 10),
+      bonus: parseInt(String((bBonusIdx >= 0 ? r[bBonusIdx] : r[1]) || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+    }))
+    .filter(b => !isNaN(b.rank));
+}
+
+// ─────────────────────────────────────────────────────────
+// CITY-AWARE INCENTIVE HELPERS (v5.2)
+// City matching is case-insensitive. Rows for the user's city take
+// precedence; if none exist, fall back to ALL rows.
+// ─────────────────────────────────────────────────────────
+function slabsForCity() {
+  const city = (state.userCity || '').toLowerCase();
+  let rows = [];
+  if (city) {
+    rows = state.incentiveSlabsAll.filter(s => s.city && s.city.toLowerCase() === city);
+  }
+  if (rows.length === 0) {
+    rows = state.incentiveSlabsAll.filter(s => (s.city || '').toUpperCase() === 'ALL');
+  }
+  // Highest first (matches v5.1 contract).
+  return rows.slice().sort((a, b) => b.recharges - a.recharges);
+}
+
+function bonusForCity() {
+  const city = (state.userCity || '').toLowerCase();
+  let rows = [];
+  if (city) {
+    rows = state.topBonusAll.filter(b => b.city && b.city.toLowerCase() === city);
+  }
+  if (rows.length === 0) {
+    rows = state.topBonusAll.filter(b => (b.city || '').toUpperCase() === 'ALL');
+  }
+  return rows.slice().sort((a, b) => a.rank - b.rank);
+}
+
+// True if a city-specific override exists for this user.
+function hasCityOverride() {
+  const city = (state.userCity || '').toLowerCase();
+  if (!city) return false;
+  const slabHit  = state.incentiveSlabsAll.some(s => s.city && s.city.toLowerCase() === city);
+  const bonusHit = state.topBonusAll.some(b => b.city && b.city.toLowerCase() === city);
+  return slabHit || bonusHit;
 }
 
 // Given a recharge count, return the incentive earned (highest slab they cleared).
 function calcIncentive(recharges) {
-  for (const slab of state.incentiveSlabs) {
+  for (const slab of slabsForCity()) {
     if (recharges >= slab.recharges) return slab.incentive;
   }
   return 0;
 }
 
-// Given a recharge count, return the next slab target (or null if maxed).
+// Given a recharge count, return the next slab info or null if maxed.
+// Returns { recharges, incentive, gap, extra } where:
+//   gap   = how many more recharges to reach this slab
+//   extra = how much more (₹) the agent will earn by clearing this slab
+//           vs their current incentive
 function nextSlab(recharges) {
-  // slabs are sorted desc — reverse to look at smallest unmet target.
-  const slabsAsc = [...state.incentiveSlabs].sort((a, b) => a.recharges - b.recharges);
+  const slabsAsc = slabsForCity().slice().sort((a, b) => a.recharges - b.recharges);
   for (const slab of slabsAsc) {
-    if (recharges < slab.recharges) return slab;
+    if (recharges < slab.recharges) {
+      const currentIncentive = calcIncentive(recharges);
+      return {
+        recharges: slab.recharges,
+        incentive: slab.incentive,
+        gap:       slab.recharges - recharges,
+        extra:     slab.incentive - currentIncentive,
+      };
+    }
   }
   return null;
 }
 
 // Given a rank, return the matching top-rank bonus or 0.
 function calcBonus(rank) {
-  const b = state.topBonus.find(x => x.rank === rank);
+  const b = bonusForCity().find(x => x.rank === rank);
   return b ? b.bonus : 0;
 }
 
@@ -1969,7 +2277,11 @@ async function openPerformance() {
   document.getElementById('perfLoading').style.display = 'flex';
   document.getElementById('perfContent').style.display = 'none';
   hideMsg('perfError');
+  // Reset to Today tab on each entry.
+  state.perfPeriod = 'today';
   try {
+    // Daily perf can be loaded lazily (only fetched if user switches tabs),
+    // but loading it eagerly keeps the UX snappy when they do.
     await Promise.all([loadPerformance(), loadIncentiveConfig()]);
     renderPerformance();
   } catch (e) {
@@ -1982,41 +2294,108 @@ async function openPerformance() {
   }
 }
 
+async function setPerfPeriod(period) {
+  state.perfPeriod = period;
+  // Update tab button state immediately for responsiveness.
+  document.querySelectorAll('.perf-period-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.period === period);
+  });
+
+  // For non-Today periods we need the daily-perf data.
+  if (period !== 'today' && !state.dailyDataLoaded) {
+    // Show a transient "loading" in the hero number.
+    document.getElementById('perfRecharges').textContent = '…';
+    document.getElementById('perfNextSlab').textContent  = 'Loading historical data…';
+    try {
+      await loadDailyPerformance();
+    } catch (e) {
+      document.getElementById('perfRecharges').textContent = '—';
+      document.getElementById('perfNextSlab').textContent  = 'Could not load historical data';
+      return;
+    }
+  }
+  renderPerformance();
+}
+
 function renderPerformance() {
   const me = state.performanceData.find(d => d.agentCode === state.agentCode);
-  const myRecharges = me ? me.recharges : 0;
-  const myRank      = me ? me.rank      : '—';
-  const earned      = calcIncentive(myRecharges);
-  const next        = nextSlab(myRecharges);
-  const bonus       = me ? calcBonus(me.rank) : 0;
+  const todayRecharges = me ? me.recharges : 0;
+  const myRank         = me ? me.rank      : '—';
+  const bonus          = me ? calcBonus(me.rank) : 0;
 
-  // Header
-  if (state.campaignInfo) {
-    document.getElementById('perfCampaignName').textContent  = state.campaignInfo.name || 'Active Campaign';
-    const dates = (state.campaignInfo.start && state.campaignInfo.end)
-      ? `${state.campaignInfo.start} → ${state.campaignInfo.end}` : 'Live now';
-    document.getElementById('perfCampaignDates').textContent = dates;
-  }
-
-  // Hero
-  document.getElementById('perfRecharges').textContent = myRecharges;
-  if (next) {
-    const remaining = next.recharges - myRecharges;
-    document.getElementById('perfNextSlab').textContent = `${remaining} more for ₹${next.incentive}`;
-    // Progress: from previous slab cleared (or 0) to next slab.
-    const prevSlab = state.incentiveSlabs.find(s => myRecharges >= s.recharges);
-    const floor    = prevSlab ? prevSlab.recharges : 0;
-    const span     = next.recharges - floor;
-    const filled   = span > 0 ? ((myRecharges - floor) / span) * 100 : 0;
-    document.getElementById('perfProgressFill').style.width = Math.max(0, Math.min(100, filled)) + '%';
-    document.getElementById('perfProgressText').textContent = `Next target: ${next.recharges} recharges`;
+  // Pick the recharge count for the selected period.
+  let displayRecharges, heroLabel;
+  if (state.perfPeriod === 'today') {
+    displayRecharges = todayRecharges;
+    heroLabel = 'Recharges today';
+  } else if (state.perfPeriod === 'yesterday') {
+    displayRecharges = aggregateRecharges('yesterday');
+    heroLabel = 'Recharges yesterday';
+  } else if (state.perfPeriod === 'week') {
+    displayRecharges = aggregateRecharges('week');
+    heroLabel = 'Recharges this week';
+  } else if (state.perfPeriod === 'month') {
+    displayRecharges = aggregateRecharges('month');
+    heroLabel = 'Recharges this month';
   } else {
-    document.getElementById('perfNextSlab').textContent = 'Top slab achieved! 🎉';
-    document.getElementById('perfProgressFill').style.width = '100%';
-    document.getElementById('perfProgressText').textContent = 'Maxed out';
+    displayRecharges = todayRecharges;
+    heroLabel = 'Recharges today';
   }
 
-  // Stats row
+  // Hero label + number
+  document.getElementById('perfHeroLabel').textContent = heroLabel;
+  document.getElementById('perfRecharges').textContent = displayRecharges;
+
+  // Earnings & next-slab text are based on TODAY's recharges (the slab system
+  // resets daily; historical tabs are informational). But for the hero subtitle
+  // we want it to make sense per-period.
+  const isToday = state.perfPeriod === 'today';
+  const earned  = calcIncentive(todayRecharges);
+  const next    = nextSlab(todayRecharges);
+
+  if (isToday) {
+    if (next) {
+      document.getElementById('perfNextSlab').textContent = `${next.gap} more for ₹${next.incentive}`;
+      const slabsDescAll = slabsForCity();
+      const prevSlab = slabsDescAll.find(s => todayRecharges >= s.recharges);
+      const floor    = prevSlab ? prevSlab.recharges : 0;
+      const span     = next.recharges - floor;
+      const filled   = span > 0 ? ((todayRecharges - floor) / span) * 100 : 0;
+      document.getElementById('perfProgressFill').style.width = Math.max(0, Math.min(100, filled)) + '%';
+      document.getElementById('perfProgressText').textContent = `Next target: ${next.recharges} recharges`;
+    } else {
+      document.getElementById('perfNextSlab').textContent = 'Top slab achieved! 🎉';
+      document.getElementById('perfProgressFill').style.width = '100%';
+      document.getElementById('perfProgressText').textContent = 'Maxed out';
+    }
+  } else {
+    // For historical tabs: simpler subtitle, no progress.
+    const periodLabel = { yesterday: 'yesterday', week: 'this week', month: 'this month' }[state.perfPeriod] || '';
+    document.getElementById('perfNextSlab').textContent = `Total ${periodLabel}`;
+    document.getElementById('perfProgressFill').style.width = '0%';
+    document.getElementById('perfProgressText').textContent = '';
+  }
+
+  // Slab nudge card — only on Today.
+  const nudge     = document.getElementById('perfSlabNudge');
+  const nudgeText = document.getElementById('perfSlabNudgeText');
+  if (isToday) {
+    if (!next) {
+      nudgeText.textContent = "🎉 You've maxed out today's slabs!";
+      nudge.style.display = 'flex';
+    } else if (todayRecharges === 0) {
+      nudgeText.textContent = `Do ${next.gap} more recharges to start earning ₹${next.incentive}`;
+      nudge.style.display = 'flex';
+    } else {
+      nudgeText.textContent = `Do ${next.gap} more recharges to earn ₹${next.extra} more`;
+      nudge.style.display = 'flex';
+    }
+  } else {
+    nudge.style.display = 'none';
+  }
+
+  // Stats row — Rank/Earned/Bonus reflect today's standing (the leaderboard
+  // and incentive payout are daily concepts).
   document.getElementById('perfRank').textContent   = myRank === '—' ? '—' : '#' + myRank;
   document.getElementById('perfEarned').textContent = '₹' + earned;
   document.getElementById('perfBonus').textContent  = bonus > 0 ? '₹' + bonus : '—';
@@ -2073,11 +2452,12 @@ function renderLeaderboard() {
   const ranksWrap = document.getElementById('lbIdentityRanks');
 
   if (state.userCity) {
-    cityPill.textContent = state.userCity;
+    const cityDisplay = titleCaseCity(state.userCity);
+    cityPill.textContent = cityDisplay;
     cityPill.style.display = 'inline-block';
     cityBlock.style.display = 'block';
     ranksWrap.classList.remove('single');
-    document.getElementById('lbIdentityCityLabel').textContent = `${state.userCity} Rank`;
+    document.getElementById('lbIdentityCityLabel').textContent = `${cityDisplay} Rank`;
     if (me && me.cityRank) {
       document.getElementById('lbIdentityCityRank').innerHTML =
         `${me.cityRank}<span class="rank-of">/ ${me.cityTotal}</span>`;
@@ -2103,7 +2483,7 @@ function renderLeaderboard() {
     toggleWrap.style.display = 'flex';
     document.getElementById('lbToggleNational').classList.toggle('active', state.lbView === 'national');
     document.getElementById('lbToggleCity').classList.toggle('active', state.lbView === 'city');
-    document.getElementById('lbToggleCity').textContent = state.userCity;
+    document.getElementById('lbToggleCity').textContent = titleCaseCity(state.userCity);
   } else {
     toggleWrap.style.display = 'none';
     state.lbView = 'national';
@@ -2120,21 +2500,20 @@ function renderLeaderboardList() {
   const list = document.getElementById('lbList');
 
   // Pick the dataset based on view.
-  let pool, rankKey, totalCount;
+  let pool, rankKey;
   if (state.lbView === 'city' && state.userCity) {
+    const cityKey = state.userCity.toLowerCase();
     pool = state.performanceData
-      .filter(d => d.city === state.userCity)
+      .filter(d => (d.city || '').toLowerCase() === cityKey)
       .sort((a, b) => b.recharges - a.recharges);
     rankKey = 'cityRank';
-    totalCount = pool.length;
     document.getElementById('lbSub').textContent =
-      `Top performers in ${state.userCity} · ${totalCount} BDEs`;
+      `Top Performer in ${titleCaseCity(state.userCity)}`;
   } else {
     pool = state.performanceData; // already sorted nationally in loadPerformance
     rankKey = 'rank';
-    totalCount = pool.length;
     document.getElementById('lbSub').textContent =
-      `Top performers across India · ${totalCount} BDEs`;
+      `Top Performer Across India`;
   }
 
   const top = pool.slice(0, 10);
@@ -2150,7 +2529,7 @@ function renderLeaderboardList() {
       : (d.agentName || 'Unknown');
     // Show Ref Code as the only identifier (drop Agent Code per design).
     const refCode = d.refCode || '—';
-    const cityMeta = d.city ? `<span class="dot">·</span><span>${d.city}</span>` : '';
+    const cityMeta = d.city ? `<span class="dot">·</span><span>${titleCaseCity(d.city)}</span>` : '';
     return `
       <div class="lb-row${isMe ? ' lb-me' : ''}">
         <div class="lb-rank-tile">${d[rankKey]}</div>
@@ -2175,7 +2554,7 @@ async function openIncentiveInfo() {
   navigate('screen-incentive-info');
   hideMsg('incError');
   try {
-    if (state.incentiveSlabs.length === 0) await loadIncentiveConfig();
+    if (state.incentiveSlabsAll.length === 0) await loadIncentiveConfig();
     renderIncentiveInfo();
   } catch (e) {
     showError('incError', 'Could not load incentive info. Try again.');
@@ -2183,19 +2562,30 @@ async function openIncentiveInfo() {
 }
 
 function renderIncentiveInfo() {
+  // City-specific subtitle when an override applies.
+  const subtitle = document.getElementById('incSubtitle');
+  if (state.userCity && hasCityOverride()) {
+    subtitle.textContent = `Plan for ${titleCaseCity(state.userCity)}`;
+    subtitle.style.display = 'block';
+  } else {
+    subtitle.style.display = 'none';
+  }
+
+  const slabsForUser = slabsForCity();
   const slabsTable = document.getElementById('incSlabsTable');
   slabsTable.innerHTML = `
     <div class="inc-row inc-header"><span class="inc-key">Recharges</span><span class="inc-val">Incentive</span></div>
-    ${state.incentiveSlabs
-      .slice() // copy
+    ${slabsForUser
+      .slice()
       .sort((a, b) => a.recharges - b.recharges)
       .map(s => `<div class="inc-row"><span class="inc-key">${s.recharges} recharges</span><span class="inc-val">₹${s.incentive}</span></div>`)
       .join('')}
   `;
+  const bonusForUser = bonusForCity();
   const bonusTable = document.getElementById('incBonusTable');
   bonusTable.innerHTML = `
     <div class="inc-row inc-header"><span class="inc-key">Rank</span><span class="inc-val">Bonus</span></div>
-    ${state.topBonus.map(b => `<div class="inc-row"><span class="inc-key">Rank #${b.rank}</span><span class="inc-val">₹${b.bonus}</span></div>`).join('')}
+    ${bonusForUser.map(b => `<div class="inc-row"><span class="inc-key">Rank #${b.rank}</span><span class="inc-val">₹${b.bonus}</span></div>`).join('')}
   `;
 }
 
