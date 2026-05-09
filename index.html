@@ -1041,16 +1041,31 @@ function showError(elId, msg) { const el = document.getElementById(elId); el.tex
 function hideMsg(elId)        { document.getElementById(elId).style.display = 'none'; }
 
 function parseCSV(text) {
-  return text.split('\n').map(line => {
-    const row = []; let inQ = false, cell = '';
-    for (const ch of line) {
-      if (ch === '"')              { inQ = !inQ; }
-      else if (ch === ',' && !inQ) { row.push(cell.trim()); cell = ''; }
+  // Proper CSV parser that respects quoted newlines.
+  // Previous version split on \n first, which broke headers like
+  // "Today total\nJobs" (a single quoted cell with an embedded newline).
+  const rows = [];
+  let row = [], cell = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i++; } // escaped quote
+        else                     { inQ = false; }
+      } else {
+        cell += ch;
+      }
+    } else {
+      if (ch === '"')              { inQ = true; }
+      else if (ch === ',')         { row.push(cell.trim()); cell = ''; }
+      else if (ch === '\n')        { row.push(cell.trim()); rows.push(row); row = []; cell = ''; }
+      else if (ch === '\r')        { /* swallow CR; \n will end the row */ }
       else                         { cell += ch; }
     }
-    row.push(cell.trim());
-    return row;
-  });
+  }
+  // Flush final cell + row if file doesn't end with newline.
+  if (cell !== '' || row.length > 0) { row.push(cell.trim()); rows.push(row); }
+  return rows;
 }
 
 function distanceM(lat1, lon1, lat2, lon2) {
