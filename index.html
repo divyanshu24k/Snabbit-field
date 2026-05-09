@@ -7,8 +7,15 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 5.0
-  LAST UPDATED: April 2026
+  VERSION     : 5.1
+  LAST UPDATED: May 2026
+
+  CHANGES IN v5.1:
+    - Added Slot Checker feature (read-only hood-level live stats)
+    - New "Slot Checker Access" flag in Login Credentials col O
+    - New CONFIG.SLOT_CHECKER_SHEET_ID
+    - New screen-slot-checker with search + 3 stat cards
+    - Utilization colour-coded: ≥60% green, 40-60% amber, <40% red
 
   CHANGES IN v5.0:
     - Add Society now shows 2 options: NM Society List + Add Society
@@ -458,6 +465,36 @@
   .inc-row .inc-val   { font-size: 16px; font-weight: 800; color: var(--accent); }
   .inc-row.inc-header .inc-key, .inc-row.inc-header .inc-val { font-size: 11px; color: var(--muted); }
 
+  /* ── SLOT CHECKER ── */
+  .slot-result-header {
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: 16px; padding: 14px 16px; margin-bottom: 12px;
+    font-size: 16px; font-weight: 800; color: var(--navy);
+  }
+  .slot-result-header .slot-result-meta {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    margin-top: 4px; letter-spacing: 0.3px; text-transform: capitalize;
+  }
+  .slot-stats-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .slot-stat-card {
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: 16px; padding: 18px 14px; text-align: center;
+  }
+  .slot-stat-card-wide { grid-column: 1 / -1; position: relative; }
+  .slot-stat-icon { font-size: 24px; margin-bottom: 6px; }
+  .slot-stat-value { font-size: 28px; font-weight: 800; color: var(--navy); line-height: 1.1; }
+  .slot-stat-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; margin-top: 4px; }
+  .slot-util-pill {
+    margin-top: 8px; display: inline-block;
+    font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
+    padding: 4px 12px; border-radius: 999px;
+  }
+  .slot-util-good { background: rgba(0,196,140,0.12); color: #00966A; border: 1.5px solid rgba(0,196,140,0.3); }
+  .slot-util-mid  { background: #FFF7E6; color: #B8860B; border: 1.5px solid #FFD699; }
+  .slot-util-low  { background: #FFF0F5; color: var(--error); border: 1.5px solid rgba(255,31,125,0.3); }
+
 </style>
 </head>
 <body>
@@ -825,6 +862,49 @@
 </div>
 
 
+<!-- ════════════════ SCREEN: SLOT CHECKER ════════════════ -->
+<div class="screen" id="screen-slot-checker">
+  <div class="big-label">Slot Checker</div>
+  <div class="big-title">Live Hood Stats</div>
+  <p class="sub">Search a hood to see today's jobs, experts on duty, and utilization.</p>
+
+  <div id="slotError" class="error-msg"></div>
+
+  <div class="society-search-wrap">
+    <label>Search Hood</label>
+    <input type="text" class="society-search-input" id="slotSearchInput"
+      placeholder="Type hood name…"
+      oninput="onSlotSearch()"
+      autocomplete="off" />
+    <div class="society-results-list" id="slotResultsList"></div>
+  </div>
+
+  <div id="slotLoading" class="loading" style="display:none"><div class="spinner"></div> Loading data…</div>
+
+  <div id="slotResultCard" style="display:none">
+    <div class="slot-result-header" id="slotResultHeader"></div>
+    <div class="slot-stats-grid">
+      <div class="slot-stat-card">
+        <div class="slot-stat-icon">📋</div>
+        <div class="slot-stat-value" id="slotJobs">—</div>
+        <div class="slot-stat-label">Jobs Today</div>
+      </div>
+      <div class="slot-stat-card">
+        <div class="slot-stat-icon">👷</div>
+        <div class="slot-stat-value" id="slotExperts">—</div>
+        <div class="slot-stat-label">Experts Present</div>
+      </div>
+      <div class="slot-stat-card slot-stat-card-wide">
+        <div class="slot-stat-icon">⚡</div>
+        <div class="slot-stat-value" id="slotUtil">—</div>
+        <div class="slot-stat-label">Utilization</div>
+        <div class="slot-util-pill" id="slotUtilPill" style="display:none">—</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <script>
 // ─────────────────────────────────────────────────────────
 // CONFIG
@@ -837,6 +917,7 @@ const CONFIG = {
   BLAST_SHEET_ID:  '1xMXKkS27fIfzMyMmUFdMiw99UQM6ZYZlcPHETwnPCVs',
   PERFORMANCE_SHEET_ID:      '1sCzhhkVlrSijVNwo9NwDVxldv1E7y2Xjh53Z3PPoyWU',
   INCENTIVE_CONFIG_SHEET_ID: '11XgLAKpWjzSq8jZAZfqq7R83zEx-M0jH3FGga6qnWj8',
+  SLOT_CHECKER_SHEET_ID:     '1PzO_a9cwBbgvAvjNhCgu8UWgecdTKH37Q-rbIQI0f6o',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
@@ -868,6 +949,7 @@ let state = {
   blastAccess:       false,
   societyAccess:     false,
   leaderboardAccess: false,
+  slotCheckerAccess: false,
   onboarded:         false,
   displayName:       '',   // from column M after onboarding
   referralCode:      '',   // from column N after onboarding
@@ -887,15 +969,18 @@ let state = {
   campaignInfo:      null, // { name, start, end, announcement }
   lbView:            'national', // 'national' | 'city'
   userCity:          '',   // derived from logged-in agent's row in performance sheet
+  slotData:          [],   // parsed slot-checker rows: [{hood, jobs, experts, utilization}, ...]
+  slotDataLoaded:    false,
+  selectedSlotHood:  null,
 };
 
 
 // ─────────────────────────────────────────────────────────
 // SESSION
 // ─────────────────────────────────────────────────────────
-function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess) {
+function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess) {
   const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
-  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, expiry }));
+  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, expiry }));
 }
 function loadSession() {
   try {
@@ -992,7 +1077,7 @@ function toBoolean(val) {
 // ─────────────────────────────────────────────────────────
 // CREDENTIALS — uses /export?format=csv (more reliable than gviz
 // when sheet has empty columns or unusual formatting).
-// Columns: S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access | Leaderboard Access | Onboarded | Name | Ref Code
+// Columns: S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access | Leaderboard Access | Onboarded | Name | Ref Code | Slot Checker Access
 // ─────────────────────────────────────────────────────────
 async function loadCreds() {
   const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.CREDS_SHEET_ID}/export?format=csv&gid=0`;
@@ -1016,6 +1101,7 @@ async function loadCreds() {
     blastIdx:       h.findIndex(c => c.includes('blast')),
     socIdx:         h.findIndex(c => c.includes('society')),
     lbIdx:          h.findIndex(c => c.includes('leaderboard')),
+    slotIdx:        h.findIndex(c => c.includes('slot')),
     onbIdx:         h.findIndex(c => c.includes('onboard')),
     dispNameIdx:    h.findIndex((c, i) => i > 0 && c === 'name'),
     refCodeIdx:     h.findIndex(c => c.includes('ref code') || c.includes('referral')),
@@ -1034,7 +1120,7 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, onbIdx, dispNameIdx, refCodeIdx } = await loadCreds();
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
       String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
       String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
@@ -1049,6 +1135,7 @@ async function doLogin() {
     state.blastAccess       = toBoolean(match[blastIdx]);
     state.societyAccess     = toBoolean(match[socIdx]);
     state.leaderboardAccess = lbIdx >= 0 ? toBoolean(match[lbIdx]) : false;
+    state.slotCheckerAccess = slotIdx >= 0 ? toBoolean(match[slotIdx]) : false;
     state.onboarded         = onbIdx >= 0 ? toBoolean(match[onbIdx]) : false;
     state.displayName       = dispNameIdx >= 0 ? String(match[dispNameIdx] || '').trim() : '';
     state.referralCode      = refCodeIdx >= 0 ? String(match[refCodeIdx] || '').trim() : '';
@@ -1057,7 +1144,7 @@ async function doLogin() {
     // force them through the one-time onboarding form before home.
     const needsOnboarding = state.leaderboardAccess && !state.onboarded && !state.displayName;
 
-    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess);
+    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess);
     if (needsOnboarding) {
       // Cache duplicates list for warning before they pick a code.
       state._allRefCodes = rows.slice(headerIdx + 1)
@@ -1094,7 +1181,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabs:[], topBonus:[], campaignInfo:null, lbView:'national', userCity:'' };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabs:[], topBonus:[], campaignInfo:null, lbView:'national', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -1111,6 +1198,7 @@ function renderHomeCards() {
     { icon:'🏘️', title:'Add Society',     sub:'Visit & record a society near you',  access: state.societyAccess,     action:'startAddSociety()' },
     { icon:'📲', title:'WhatsApp Blast',  sub:'Send your unique invite link',        access: state.blastAccess,       action:'startWhatsappBlast()' },
     { icon:'🏆', title:'My Performance',  sub:'See your rank & incentive earned',    access: state.leaderboardAccess, action:'openPerformance()' },
+    { icon:'📊', title:'Slot Checker',    sub:'Live jobs, experts & utilization',    access: state.slotCheckerAccess, action:'startSlotChecker()' },
   ];
   const accessible = cards.filter(c => c.access);
   const grid = document.getElementById('homeGrid');
@@ -2095,6 +2183,160 @@ function renderIncentiveInfo() {
 
 
 // ─────────────────────────────────────────────────────────
+// SLOT CHECKER — read-only feature.
+// Reads the slot-checker sheet (single tab), parses hood/jobs/experts/utilization,
+// and lets the user search by hood name with live autocomplete.
+// Sheet must be shared with "Anyone with the link — Viewer".
+// ─────────────────────────────────────────────────────────
+
+async function loadSlotData() {
+  if (state.slotDataLoaded) return;
+  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.SLOT_CHECKER_SHEET_ID}/export?format=csv&gid=0`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('SLOT_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
+
+  // Header row contains 'hood' — find it. Some headers have line breaks
+  // (e.g. "Today total\nJobs"), so we normalise whitespace before matching.
+  const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().replace(/\s+/g, ' ').trim() === 'hood'));
+  if (headerIdx === -1) throw new Error('Slot header not found');
+
+  const h = rows[headerIdx].map(c => String(c).toLowerCase().replace(/\s+/g, ' ').trim());
+
+  const iHood    = h.findIndex(c => c === 'hood');
+  const iJobs    = h.findIndex(c => c.includes('today total jobs') || c.includes('today total job'));
+  const iExperts = h.findIndex(c => c.includes('d0 experts') || c === 'd0 experts');
+  const iUtil    = h.findIndex(c => c.includes('utilization'));
+
+  if (iHood < 0 || iJobs < 0 || iExperts < 0 || iUtil < 0) {
+    throw new Error('SLOT_COLUMNS_NOT_FOUND');
+  }
+
+  state.slotData = rows.slice(headerIdx + 1)
+    .filter(r => {
+      const hood = String(r[iHood] || '').trim();
+      // Skip empty hoods, #REF! errors, and stray whitespace-only rows.
+      return hood && hood !== '#REF!' && !hood.startsWith('#');
+    })
+    .map(r => ({
+      hood:        String(r[iHood] || '').trim(),
+      jobs:        parseInt(String(r[iJobs] || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+      experts:     parseInt(String(r[iExperts] || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+      utilization: parseFloat(String(r[iUtil] || '0').replace(/[^0-9.\-]/g, '')) || 0,
+    }))
+    .sort((a, b) => a.hood.localeCompare(b.hood));
+
+  state.slotDataLoaded = true;
+  console.log(`Slot data loaded: ${state.slotData.length} hoods`);
+}
+
+async function startSlotChecker() {
+  hideMsg('slotError');
+  document.getElementById('slotSearchInput').value = '';
+  document.getElementById('slotResultsList').innerHTML = '';
+  document.getElementById('slotResultsList').classList.remove('visible');
+  document.getElementById('slotResultCard').style.display = 'none';
+  state.selectedSlotHood = null;
+  navigate('screen-slot-checker');
+
+  if (!state.slotDataLoaded) {
+    document.getElementById('slotLoading').style.display = 'flex';
+    try {
+      await loadSlotData();
+    } catch (e) {
+      document.getElementById('slotLoading').style.display = 'none';
+      if (e.message === 'SLOT_SHEET_ACCESS_DENIED') {
+        showError('slotError', 'Slot data sheet is not shared. Please contact admin.');
+      } else if (e.message === 'SLOT_COLUMNS_NOT_FOUND') {
+        showError('slotError', 'Slot data columns have changed. Please contact admin.');
+      } else {
+        showError('slotError', 'Could not load slot data. Check your internet and try again.');
+      }
+      return;
+    }
+    document.getElementById('slotLoading').style.display = 'none';
+  }
+}
+
+function onSlotSearch() {
+  const query = document.getElementById('slotSearchInput').value.trim().toLowerCase();
+  const list  = document.getElementById('slotResultsList');
+  document.getElementById('slotResultCard').style.display = 'none';
+  state.selectedSlotHood = null;
+
+  if (query.length < 2) { list.classList.remove('visible'); list.innerHTML = ''; return; }
+
+  const matches = state.slotData.filter(s => s.hood.toLowerCase().includes(query));
+  const top     = matches.slice(0, CONFIG.MAX_SEARCH_RESULTS);
+
+  if (top.length === 0) {
+    list.innerHTML = `<div class="society-result-count">No hoods found</div>`;
+    list.classList.add('visible');
+    return;
+  }
+
+  list.innerHTML = top.map(s => `
+    <div class="society-result-item" onclick="selectSlotHood('${s.hood.replace(/'/g,"\\'")}')">
+      ${s.hood}
+    </div>
+  `).join('') + (matches.length > CONFIG.MAX_SEARCH_RESULTS
+    ? `<div class="society-result-count">Showing ${CONFIG.MAX_SEARCH_RESULTS} of ${matches.length} — type more to narrow</div>`
+    : '');
+  list.classList.add('visible');
+}
+
+function selectSlotHood(hood) {
+  const data = state.slotData.find(s => s.hood === hood);
+  if (!data) return;
+  state.selectedSlotHood = data;
+
+  document.getElementById('slotSearchInput').value = hood;
+  document.getElementById('slotResultsList').classList.remove('visible');
+
+  renderSlotResult(data);
+}
+
+function renderSlotResult(data) {
+  document.getElementById('slotResultHeader').innerHTML = `
+    ${data.hood}
+    <div class="slot-result-meta">Live snapshot</div>
+  `;
+  document.getElementById('slotJobs').textContent    = data.jobs;
+  document.getElementById('slotExperts').textContent = data.experts;
+
+  // Utilization is stored as a percent number (e.g. 53.77 means 53.77%).
+  const util = data.utilization;
+  document.getElementById('slotUtil').textContent = util.toFixed(1) + '%';
+
+  const pill = document.getElementById('slotUtilPill');
+  pill.classList.remove('slot-util-good', 'slot-util-mid', 'slot-util-low');
+  if (util >= 60) {
+    pill.textContent = 'Healthy';
+    pill.classList.add('slot-util-good');
+  } else if (util >= 40) {
+    pill.textContent = 'Moderate';
+    pill.classList.add('slot-util-mid');
+  } else {
+    pill.textContent = 'Low';
+    pill.classList.add('slot-util-low');
+  }
+  pill.style.display = 'inline-block';
+
+  document.getElementById('slotResultCard').style.display = 'block';
+}
+
+// Close the slot dropdown when clicking outside (mirrors the blast pattern).
+document.addEventListener('click', e => {
+  const list  = document.getElementById('slotResultsList');
+  const input = document.getElementById('slotSearchInput');
+  if (list && input && !list.contains(e.target) && e.target !== input) list.classList.remove('visible');
+});
+
+
+// ─────────────────────────────────────────────────────────
 // AUTO LOGIN
 // ─────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
@@ -2105,6 +2347,7 @@ window.addEventListener('load', () => {
     state.blastAccess       = session.blastAccess;
     state.societyAccess     = session.societyAccess;
     state.leaderboardAccess = session.leaderboardAccess || false;
+    state.slotCheckerAccess = session.slotCheckerAccess || false;
     onLoggedIn();
   }
 });
