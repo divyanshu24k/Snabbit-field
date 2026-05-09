@@ -487,9 +487,12 @@
   .slot-stat-value { font-size: 28px; font-weight: 800; color: var(--navy); line-height: 1.1; }
   .slot-stat-label { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.5px; text-transform: uppercase; margin-top: 4px; }
   .slot-util-pill {
-    margin-top: 8px; display: inline-block;
-    font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
-    padding: 4px 12px; border-radius: 999px;
+    margin-top: 12px;
+    width: 100%;
+    box-sizing: border-box;
+    font-size: 13px; font-weight: 700; line-height: 1.4;
+    padding: 12px 14px; border-radius: 12px;
+    text-align: center;
   }
   .slot-util-good { background: rgba(0,196,140,0.12); color: #00966A; border: 1.5px solid rgba(0,196,140,0.3); }
   .slot-util-mid  { background: #FFF7E6; color: #B8860B; border: 1.5px solid #FFD699; }
@@ -2328,17 +2331,17 @@ function renderSlotResult(data) {
 
   const pill = document.getElementById('slotUtilPill');
   pill.classList.remove('slot-util-good', 'slot-util-mid', 'slot-util-low');
-  if (util >= 60) {
-    pill.textContent = 'Healthy';
-    pill.classList.add('slot-util-good');
+  if (util > 50) {
+    pill.textContent = 'Slots cannot be opened right now due to high util. New slots will be visible after 9 P.M.';
+    pill.classList.add('slot-util-low');
   } else if (util >= 40) {
-    pill.textContent = 'Moderate';
+    pill.textContent = 'Slight Possibility';
     pill.classList.add('slot-util-mid');
   } else {
-    pill.textContent = 'Low';
-    pill.classList.add('slot-util-low');
+    pill.textContent = 'Slots can be Opened';
+    pill.classList.add('slot-util-good');
   }
-  pill.style.display = 'inline-block';
+  pill.style.display = 'block';
 
   document.getElementById('slotResultCard').style.display = 'block';
 }
