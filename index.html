@@ -7,8 +7,24 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 5.2
+  VERSION     : 5.3
   LAST UPDATED: May 2026
+
+  CHANGES IN v5.3:
+    1. Recharge period filters changed from calendar-based to rolling:
+       - "Week" tab now shows last 7 days (today + previous 6)
+       - "Month" tab now shows last 30 days (today + previous 29)
+       Tab labels (Today/Yesterday/Week/Month) remain unchanged for UI
+       consistency. Hero subtitle text updated to "Recharges in last
+       7 days" / "Recharges in last 30 days" so the window is clear.
+    2. Leaderboard now has the same period filter strip as the
+       My Performance screen. Top performers are re-ranked based on
+       the selected period (Today / Yesterday / Last 7 Days /
+       Last 30 Days) by aggregating ref_code totals from the
+       BDE_Daily_Performance tab. National + city ranks are recomputed
+       per period. Daily-perf data is lazy-loaded on the first switch
+       away from Today, identical to the perf screen behaviour.
+       Leaderboard subtitle now includes the period suffix.
 
   CHANGES IN v5.2:
     1. Removed "Current Campaign" header from My Performance screen
@@ -929,6 +945,14 @@
       <button class="lb-toggle-btn" id="lbToggleCity" onclick="setLeaderboardView('city')">City</button>
     </div>
 
+    <!-- Period tabs (Today / Yesterday / Week / Month) — week = last 7 days, month = last 30 days -->
+    <div class="perf-period-tabs" id="lbPeriodTabs">
+      <button class="perf-period-btn active" data-period="today"     onclick="setLeaderboardPeriod('today')">Today</button>
+      <button class="perf-period-btn"        data-period="yesterday" onclick="setLeaderboardPeriod('yesterday')">Yesterday</button>
+      <button class="perf-period-btn"        data-period="week"      onclick="setLeaderboardPeriod('week')">Week</button>
+      <button class="perf-period-btn"        data-period="month"     onclick="setLeaderboardPeriod('month')">Month</button>
+    </div>
+
     <div class="lb-list" id="lbList"></div>
   </div>
 </div>
@@ -1077,6 +1101,7 @@ let state = {
   topBonusAll:       [],   // [{city, rank, bonus}, ...]
   campaignInfo:      null, // { name, start, end, announcement }
   lbView:            'national', // 'national' | 'city'
+  lbPeriod:          'today',    // 'today' | 'yesterday' | 'week' | 'month' (week=last 7d, month=last 30d)
   userCity:          '',   // derived from logged-in agent's row in performance sheet (raw, lowercase)
   slotData:          [],   // parsed slot-checker rows: [{hood, jobs, experts, utilization}, ...]
   slotDataLoaded:    false,
@@ -1309,7 +1334,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -2118,15 +2143,14 @@ function periodRange(period) {
     return { start, end };
   }
   if (period === 'week') {
-    // Current week starts on Monday.
-    const start = new Date(today);
-    const dow = (start.getDay() + 6) % 7; // Mon=0, Sun=6
-    start.setDate(start.getDate() - dow);
-    const end = new Date(today); end.setDate(end.getDate() + 1); // include today
+    // Rolling last 7 days INCLUDING today (today + previous 6 days).
+    const start = new Date(today); start.setDate(start.getDate() - 6);
+    const end   = new Date(today); end.setDate(end.getDate() + 1); // include today
     return { start, end };
   }
   if (period === 'month') {
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    // Rolling last 30 days INCLUDING today (today + previous 29 days).
+    const start = new Date(today); start.setDate(start.getDate() - 29);
     const end   = new Date(today); end.setDate(end.getDate() + 1); // include today
     return { start, end };
   }
@@ -2168,6 +2192,80 @@ function aggregateRecharges(period) {
   }
   console.log(`[aggregateRecharges] period=${period} refCode=${myRefCode} range=[${startKey},${endKey}) myRowsTotal=${myRowsTotal} matchedRows=${matchedRows} sum=${sum}`);
   return sum;
+}
+
+// ─────────────────────────────────────────────────────────
+// PERIOD-AWARE LEADERBOARD HELPERS (v5.3)
+// For non-today periods we re-aggregate every BDE's recharges from
+// dailyData and recompute national + city ranks for that window.
+// Returns an array shaped like state.performanceData but with the
+// period-specific recharges, rank, cityRank, cityTotal values.
+// ─────────────────────────────────────────────────────────
+function aggregateAllByRefCode(period) {
+  const range = periodRange(period);
+  if (!range) return new Map();
+
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const startKey = fmt(range.start);
+  const endKey   = fmt(range.end);
+
+  // Sum customers per ref_code (lowercased) across the date window.
+  const totals = new Map();
+  for (const r of state.dailyData) {
+    const ref = (r.refCode || '').trim().toLowerCase();
+    if (!ref) continue;
+    const k = `${r.date.getUTCFullYear()}-${String(r.date.getUTCMonth()+1).padStart(2,'0')}-${String(r.date.getUTCDate()).padStart(2,'0')}`;
+    if (k >= startKey && k < endKey) {
+      totals.set(ref, (totals.get(ref) || 0) + r.customers);
+    }
+  }
+  return totals;
+}
+
+// Build a leaderboard dataset for the given period:
+//   today        → state.performanceData (already ranked)
+//   yesterday/week/month → join BDE roster (from performanceData) with daily totals,
+//                           re-rank nationally + per city.
+function leaderboardDataForPeriod(period) {
+  if (period === 'today') return state.performanceData;
+
+  const totals = aggregateAllByRefCode(period);
+
+  // Start from the BDE roster so names + cities are correct.
+  const data = state.performanceData.map(d => ({
+    agentCode: d.agentCode,
+    agentName: d.agentName,
+    refCode:   d.refCode,
+    city:      d.city,
+    recharges: totals.get((d.refCode || '').trim().toLowerCase()) || 0,
+  }));
+
+  // National ranking (descending, ties share rank).
+  data.sort((a, b) => b.recharges - a.recharges);
+  let lastRech = null, lastRank = 0;
+  data.forEach((d, i) => {
+    if (d.recharges !== lastRech) { lastRank = i + 1; lastRech = d.recharges; }
+    d.rank = lastRank;
+  });
+
+  // City ranking — group by city (case-insensitive), rank within each.
+  const byCity = {};
+  data.forEach(d => {
+    if (!d.city) return;
+    const k = d.city.toLowerCase();
+    (byCity[k] = byCity[k] || []).push(d);
+  });
+  Object.values(byCity).forEach(group => {
+    group.sort((a, b) => b.recharges - a.recharges);
+    let lr = null, lrank = 0;
+    group.forEach((d, i) => {
+      if (d.recharges !== lr) { lrank = i + 1; lr = d.recharges; }
+      d.cityRank  = lrank;
+      d.cityTotal = group.length;
+    });
+  });
+
+  return data;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -2376,10 +2474,10 @@ function renderPerformance() {
     heroLabel = 'Recharges yesterday';
   } else if (state.perfPeriod === 'week') {
     displayRecharges = aggregateRecharges('week');
-    heroLabel = 'Recharges this week';
+    heroLabel = 'Recharges in last 7 days';
   } else if (state.perfPeriod === 'month') {
     displayRecharges = aggregateRecharges('month');
-    heroLabel = 'Recharges this month';
+    heroLabel = 'Recharges in last 30 days';
   } else {
     displayRecharges = todayRecharges;
     heroLabel = 'Recharges today';
@@ -2413,7 +2511,7 @@ function renderPerformance() {
     }
   } else {
     // For historical tabs: simpler subtitle, no progress.
-    const periodLabel = { yesterday: 'yesterday', week: 'this week', month: 'this month' }[state.perfPeriod] || '';
+    const periodLabel = { yesterday: 'yesterday', week: 'in last 7 days', month: 'in last 30 days' }[state.perfPeriod] || '';
     document.getElementById('perfNextSlab').textContent = `Total ${periodLabel}`;
     document.getElementById('perfProgressFill').style.width = '0%';
     document.getElementById('perfProgressText').textContent = '';
@@ -2462,6 +2560,11 @@ async function openLeaderboard() {
   document.getElementById('lbLoading').style.display = 'flex';
   document.getElementById('lbContent').style.display = 'none';
   hideMsg('lbError');
+  // Reset to Today period on every entry; period tab UI follows.
+  state.lbPeriod = 'today';
+  document.querySelectorAll('#lbPeriodTabs .perf-period-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.period === 'today');
+  });
   try {
     if (state.performanceData.length === 0) await loadPerformance();
     // Default view: city if user has a city, otherwise national.
@@ -2473,6 +2576,29 @@ async function openLeaderboard() {
   }
 }
 
+// Switch period (Today / Yesterday / Week / Month). Non-today periods need
+// daily-perf data — fetch it lazily on first switch.
+async function setLeaderboardPeriod(period) {
+  state.lbPeriod = period;
+  document.querySelectorAll('#lbPeriodTabs .perf-period-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.period === period);
+  });
+
+  if (period !== 'today' && !state.dailyDataLoaded) {
+    // Show transient loading state in the list area while we fetch.
+    document.getElementById('lbList').innerHTML =
+      `<div class="loading"><div class="spinner"></div> Loading historical leaderboard…</div>`;
+    try {
+      await loadDailyPerformance();
+    } catch (e) {
+      document.getElementById('lbList').innerHTML =
+        `<div class="lb-empty">Could not load historical data. Try again.</div>`;
+      return;
+    }
+  }
+  renderLeaderboard();
+}
+
 function setLeaderboardView(view) {
   state.lbView = view;
   document.getElementById('lbToggleNational').classList.toggle('active', view === 'national');
@@ -2481,8 +2607,12 @@ function setLeaderboardView(view) {
 }
 
 function renderLeaderboard() {
+  // Pick the dataset for the selected period. Today uses live snapshot;
+  // other periods re-aggregate from dailyData and recompute ranks.
+  const periodData = leaderboardDataForPeriod(state.lbPeriod);
+
   // 1) Identity card (always visible at top — name, ref code, ranks)
-  const me = state.performanceData.find(d => d.agentCode === state.agentCode);
+  const me = periodData.find(d => d.agentCode === state.agentCode);
   const myDisplayName = state.displayName || (me && me.agentName) || state.agentName || '—';
   // Prefer Ref Code from the Performance sheet (single source of truth, set by data team).
   // Fall back to onboarding-collected ref code, then nothing.
@@ -2515,7 +2645,7 @@ function renderLeaderboard() {
 
   if (me) {
     document.getElementById('lbIdentityNationalRank').innerHTML =
-      `${me.rank}<span class="rank-of">/ ${state.performanceData.length}</span>`;
+      `${me.rank}<span class="rank-of">/ ${periodData.length}</span>`;
   } else {
     document.getElementById('lbIdentityNationalRank').textContent = '—';
   }
@@ -2532,35 +2662,46 @@ function renderLeaderboard() {
     state.lbView = 'national';
   }
 
-  // 3) The list itself
-  renderLeaderboardList();
+  // 3) The list itself (uses the same period dataset)
+  renderLeaderboardList(periodData);
 
   document.getElementById('lbLoading').style.display = 'none';
   document.getElementById('lbContent').style.display = 'block';
 }
 
-function renderLeaderboardList() {
+function renderLeaderboardList(periodData) {
+  // If called without args (e.g. from the view toggle), recompute the dataset.
+  if (!periodData) periodData = leaderboardDataForPeriod(state.lbPeriod);
+
   const list = document.getElementById('lbList');
+
+  // Subtitle reflects the selected period.
+  const periodSuffix = {
+    today:     ' Today',
+    yesterday: ' Yesterday',
+    week:      ' — Last 7 Days',
+    month:     ' — Last 30 Days',
+  }[state.lbPeriod] || '';
 
   // Pick the dataset based on view.
   let pool, rankKey;
   if (state.lbView === 'city' && state.userCity) {
     const cityKey = state.userCity.toLowerCase();
-    pool = state.performanceData
+    pool = periodData
       .filter(d => (d.city || '').toLowerCase() === cityKey)
       .sort((a, b) => b.recharges - a.recharges);
     rankKey = 'cityRank';
     document.getElementById('lbSub').textContent =
-      `Top Performer in ${titleCaseCity(state.userCity)}`;
+      `Top Performer in ${titleCaseCity(state.userCity)}${periodSuffix}`;
   } else {
-    pool = state.performanceData; // already sorted nationally in loadPerformance
+    pool = periodData.slice().sort((a, b) => b.recharges - a.recharges);
     rankKey = 'rank';
     document.getElementById('lbSub').textContent =
-      `Top Performer Across India`;
+      `Top Performer Across India${periodSuffix}`;
   }
 
   const top = pool.slice(0, 10);
-  if (top.length === 0) {
+  if (top.length === 0 || top.every(d => d.recharges === 0)) {
     list.innerHTML = `<div class="lb-empty">No data yet for this view.</div>`;
     return;
   }
