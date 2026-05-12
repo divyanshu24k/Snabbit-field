@@ -7,8 +7,37 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 5.3
+  VERSION     : 5.4
   LAST UPDATED: May 2026
+
+  CHANGES IN v5.4:
+    1. NEW MODULE: Inventory Management — two new screens gated by two
+       new access flags in Login Credentials.
+       - Inventory Dashboard (read-only, Option 1)
+       - Inventory Update    (write,     Option 2)
+    2. New CONFIG entries (placeholder IDs — REPLACE BEFORE PROD):
+         INVENTORY_STOCK_SHEET_ID
+         PRODUCT_CATALOG_SHEET_ID
+    3. Login Credentials sheet — three new columns expected:
+         Col P : Inventory Update Access (TRUE/FALSE)
+         Col Q : Inventory Dashboard Access (TRUE/FALSE)
+         Col R : Inventory Role  (central / manager / tl)
+         Col S : Assigned City   (single city name, or ALL for central)
+       Backwards-compatible: missing cols default to no access.
+    4. Inventory Update form fields: City, TL/Manager Name, Item,
+       Total Stock, breakdown (Not in Use / In Use / Damaged / Ex-BDE),
+       Remarks. Total Stock is editable only by role=central.
+       Live breakdown matcher under the four fields; submit disabled
+       until breakdown sum equals Total Stock.
+    5. Inventory Dashboard sections:
+         - 4 KPI tiles (Total / In Use / Damaged / With Ex-BDE)
+         - Alerts panel (5 rules — stale 7d, damage >25%, ex-BDE 30d,
+           uninitialised, breakdown mismatch)
+         - City × Item matrix with tap-to-drill detail modal
+         - Recent updates feed (last 20 within user scope)
+    6. Apps Script (TO BE DEPLOYED by admin) — new action:
+         upsertInventoryStock — see TODO block in JS section.
+       Until deployed, submit button shows error toast.
 
   CHANGES IN v5.3:
     1. Recharge period filters changed from calendar-based to rolling:
@@ -586,6 +615,151 @@
   .slot-util-mid  { background: #FFF7E6; color: #B8860B; border: 1.5px solid #FFD699; }
   .slot-util-low  { background: #FFF0F5; color: var(--error); border: 1.5px solid rgba(255,31,125,0.3); }
 
+  /* ── INVENTORY (v5.4) ── */
+  /* Scope pill at the top of inventory screens */
+  .inv-scope-pill {
+    display: inline-block; background: var(--surface2); border: 1.5px solid var(--border);
+    border-radius: 999px; padding: 5px 12px; font-size: 11px; font-weight: 700;
+    color: var(--muted); letter-spacing: 0.5px; margin-bottom: 14px;
+  }
+  .inv-scope-pill b { color: var(--accent); }
+
+  /* KPI tiles 2x2 */
+  .inv-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+  .inv-tile {
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: 16px; padding: 14px;
+  }
+  .inv-tile-label { font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+  .inv-tile-value { font-size: 24px; font-weight: 800; color: var(--navy); line-height: 1.1; }
+  .inv-tile-sub   { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 2px; }
+  .inv-tile.warn  { border-color: #FFD699; background: #FFF7E6; }
+  .inv-tile.warn .inv-tile-value { color: #B8860B; }
+  .inv-tile.alert { border-color: rgba(255,31,125,0.4); background: #FFF0F5; }
+  .inv-tile.alert .inv-tile-value { color: var(--error); }
+
+  /* Section header inside dashboard */
+  .inv-section-h {
+    font-size: 11px; font-weight: 800; color: var(--muted);
+    letter-spacing: 1.2px; text-transform: uppercase; margin: 4px 0 10px;
+  }
+
+  /* Alerts panel */
+  .inv-alert-row {
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: 14px; padding: 12px 14px; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .inv-alert-row.amber { border-color: #FFD699; background: #FFFBF0; }
+  .inv-alert-row.red   { border-color: rgba(255,31,125,0.4); background: #FFF5F8; }
+  .inv-alert-icon { font-size: 22px; flex-shrink: 0; }
+  .inv-alert-body { flex: 1; min-width: 0; }
+  .inv-alert-title { font-size: 13px; font-weight: 800; color: var(--navy); }
+  .inv-alert-sub   { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 2px; }
+  .inv-alert-count {
+    font-size: 13px; font-weight: 800; color: var(--accent);
+    background: var(--surface2); border: 1.5px solid var(--border);
+    border-radius: 999px; padding: 3px 10px; flex-shrink: 0;
+  }
+
+  /* City × Item matrix — rendered as stacked city cards on mobile */
+  .inv-city-card {
+    background: var(--surface); border: 2px solid var(--border);
+    border-radius: 16px; padding: 14px; margin-bottom: 10px;
+  }
+  .inv-city-card-h {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .inv-city-name { font-size: 15px; font-weight: 800; color: var(--navy); }
+  .inv-city-total { font-size: 11px; font-weight: 700; color: var(--muted); }
+  .inv-city-total b { color: var(--navy); font-size: 14px; }
+  .inv-item-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; cursor: pointer;
+  }
+  .inv-item-row + .inv-item-row { border-top: 1px solid var(--border); }
+  .inv-item-row:hover { background: var(--surface2); margin: 0 -8px; padding: 8px; border-radius: 8px; }
+  .inv-item-name { font-size: 13px; font-weight: 700; color: var(--navy); flex: 1; min-width: 0; padding-right: 8px; }
+  .inv-item-bar {
+    display: flex; height: 6px; border-radius: 3px; overflow: hidden;
+    background: var(--border); width: 100px; flex-shrink: 0;
+  }
+  .inv-item-bar-seg { height: 100%; }
+  .inv-item-bar-good   { background: var(--success); }
+  .inv-item-bar-inuse  { background: var(--accent-light); }
+  .inv-item-bar-dmg    { background: #F0A500; }
+  .inv-item-bar-exbde  { background: var(--error); }
+  .inv-item-total { font-size: 13px; font-weight: 800; color: var(--navy); margin-left: 10px; min-width: 30px; text-align: right; }
+
+  /* Legend */
+  .inv-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 18px; }
+  .inv-legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; color: var(--muted); }
+  .inv-legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* Recent updates feed */
+  .inv-feed-row {
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: 12px; padding: 10px 14px; margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .inv-feed-meta {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    letter-spacing: 0.3px; margin-bottom: 3px;
+  }
+  .inv-feed-title { font-weight: 800; color: var(--navy); }
+  .inv-feed-sub   { font-size: 11px; color: var(--muted); font-weight: 600; margin-top: 2px; }
+
+  /* Breakdown matcher pill */
+  .inv-match-pill {
+    border-radius: 12px; padding: 10px 14px; font-size: 13px; font-weight: 700;
+    text-align: center; margin: -4px 0 16px; line-height: 1.4;
+  }
+  .inv-match-ok    { background: rgba(0,196,140,0.12); color: #00966A; border: 1.5px solid rgba(0,196,140,0.3); }
+  .inv-match-warn  { background: #FFF0F5; color: var(--error); border: 1.5px solid rgba(255,31,125,0.3); }
+
+  /* Read-only field appearance */
+  .input-wrap input:read-only,
+  .input-wrap input[readonly] {
+    background: var(--surface2); color: var(--muted); cursor: not-allowed;
+    border-style: dashed;
+  }
+  .input-wrap .field-lock-note {
+    font-size: 10px; font-weight: 600; color: var(--muted);
+    margin-top: 4px; font-style: italic;
+  }
+
+  /* Two-column number input row */
+  .inv-num-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .inv-num-row .input-wrap { margin-bottom: 14px; }
+
+  /* Detail modal — reuses .modal-overlay/.modal-card from existing styles */
+  .inv-detail-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .inv-detail-row:last-of-type { border-bottom: none; }
+  .inv-detail-row .k { color: var(--muted); font-weight: 600; }
+  .inv-detail-row .v { color: var(--navy); font-weight: 800; }
+  .inv-detail-remark {
+    background: var(--surface2); border-radius: 10px; padding: 10px 12px;
+    font-size: 12px; font-weight: 600; color: var(--navy2); margin-top: 12px;
+    line-height: 1.5;
+  }
+
+  /* Toast */
+  .inv-toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--navy); color: #fff; padding: 12px 20px;
+    border-radius: 999px; font-size: 13px; font-weight: 700;
+    z-index: 300; opacity: 0; transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none; max-width: 90%;
+  }
+  .inv-toast.visible { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+  .inv-toast.error { background: var(--error); }
+  .inv-toast.success { background: var(--success); }
+
 </style>
 </head>
 <body>
@@ -1017,6 +1191,123 @@
 </div>
 
 
+<!-- ════════════════ INVENTORY DASHBOARD (v5.4 — Option 1) ════════════════ -->
+<div class="screen" id="screen-inventory-dashboard">
+  <div class="big-label">Inventory</div>
+  <div class="big-title">Dashboard</div>
+  <p class="sub">Live stock position across cities, refreshed each time you open this screen.</p>
+
+  <div class="inv-scope-pill" id="invDashScope">Scope: <b>—</b></div>
+
+  <div id="invDashError" class="error-msg"></div>
+  <div id="invDashLoading" class="loading" style="display:none"><div class="spinner"></div> Loading inventory…</div>
+
+  <div id="invDashContent" style="display:none">
+    <!-- KPI tiles -->
+    <div class="inv-tiles" id="invDashTiles"></div>
+
+    <!-- Alerts -->
+    <div class="inv-section-h">Alerts</div>
+    <div id="invDashAlerts"></div>
+
+    <!-- Matrix -->
+    <div class="inv-section-h" style="margin-top:18px">Stock by City</div>
+    <div class="inv-legend">
+      <span class="inv-legend-item"><span class="inv-legend-dot" style="background:var(--success)"></span>Not in Use</span>
+      <span class="inv-legend-item"><span class="inv-legend-dot" style="background:var(--accent-light)"></span>In Use</span>
+      <span class="inv-legend-item"><span class="inv-legend-dot" style="background:#F0A500"></span>Damaged</span>
+      <span class="inv-legend-item"><span class="inv-legend-dot" style="background:var(--error)"></span>Ex-BDE</span>
+    </div>
+    <div id="invDashMatrix"></div>
+
+    <!-- Recent updates feed -->
+    <div class="inv-section-h" style="margin-top:18px">Recent Updates</div>
+    <div id="invDashFeed"></div>
+  </div>
+
+  <button class="btn btn-secondary" onclick="navigate('screen-inventory-update')" id="invDashGoToUpdate" style="display:none;margin-top:18px">✎ Update Inventory</button>
+</div>
+
+
+<!-- ════════════════ INVENTORY UPDATE (v5.4 — Option 2) ════════════════ -->
+<div class="screen" id="screen-inventory-update">
+  <div class="big-label">Inventory</div>
+  <div class="big-title">Update Stock</div>
+  <p class="sub">Record the current stock position for a city × item. The breakdown must add up to Total Stock.</p>
+
+  <div class="inv-scope-pill" id="invUpdateScope">Scope: <b>—</b></div>
+
+  <div id="invUpdateError" class="error-msg"></div>
+  <div id="invUpdateSuccess" class="success-msg"></div>
+
+  <div class="input-wrap">
+    <label>City</label>
+    <select id="invCitySelect" onchange="onInvCityChange()"></select>
+  </div>
+
+  <div class="input-wrap">
+    <label>TL / Manager Name</label>
+    <input type="text" id="invTLName" placeholder="e.g. Ramesh K." />
+  </div>
+
+  <div class="input-wrap">
+    <label>Item</label>
+    <select id="invItemSelect" onchange="onInvItemChange()"></select>
+  </div>
+
+  <div class="input-wrap">
+    <label>Total Stock</label>
+    <input type="number" id="invTotalStock" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
+    <div class="field-lock-note" id="invTotalStockLockNote" style="display:none">🔒 Only Central Team can update Total Stock. Contact Central Team if a correction is needed.</div>
+  </div>
+
+  <div class="inv-num-row">
+    <div class="input-wrap">
+      <label>Not in Use</label>
+      <input type="number" id="invStockNotInUse" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
+    </div>
+    <div class="input-wrap">
+      <label>In Use</label>
+      <input type="number" id="invStockInUse" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
+    </div>
+    <div class="input-wrap">
+      <label>Damaged</label>
+      <input type="number" id="invStockDamaged" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
+    </div>
+    <div class="input-wrap">
+      <label>With Ex-BDE</label>
+      <input type="number" id="invStockExBDE" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
+    </div>
+  </div>
+
+  <div class="inv-match-pill" id="invMatchPill">Breakdown total: 0 / 0</div>
+
+  <div class="input-wrap">
+    <label>Remarks (optional)</label>
+    <textarea id="invRemarks" maxlength="500" placeholder="Add a short note — e.g. dispatch reference, reason for damage, ex-BDE name."></textarea>
+  </div>
+
+  <button class="btn btn-primary" id="invSubmitBtn" onclick="submitInventoryUpdate()" disabled>Save Update</button>
+</div>
+
+
+<!-- ════════════════ INVENTORY DETAIL MODAL (v5.4) ════════════════ -->
+<div class="modal-overlay" id="invDetailModal">
+  <div class="modal-card">
+    <div class="modal-title" id="invDetailTitle">—</div>
+    <div class="modal-sub" id="invDetailMeta">—</div>
+    <div id="invDetailBody"></div>
+    <div class="inv-detail-remark" id="invDetailRemark" style="display:none"></div>
+    <button class="btn btn-primary" id="invDetailEditBtn" onclick="editFromDetail()" style="display:none;margin-top:18px">✎ Update this Record</button>
+    <button class="btn btn-secondary" onclick="closeInvDetail()">← Close</button>
+  </div>
+</div>
+
+
+<!-- ════════════════ INVENTORY TOAST (v5.4) ════════════════ -->
+<div class="inv-toast" id="invToast"></div>
+
+
 <script>
 // ─────────────────────────────────────────────────────────
 // CONFIG
@@ -1030,6 +1321,9 @@ const CONFIG = {
   PERFORMANCE_SHEET_ID:      '1sCzhhkVlrSijVNwo9NwDVxldv1E7y2Xjh53Z3PPoyWU',
   INCENTIVE_CONFIG_SHEET_ID: '11XgLAKpWjzSq8jZAZfqq7R83zEx-M0jH3FGga6qnWj8',
   SLOT_CHECKER_SHEET_ID:     '1PzO_a9cwBbgvAvjNhCgu8UWgecdTKH37Q-rbIQI0f6o',
+  // v5.4 — REPLACE THESE TWO IDS BEFORE PRODUCTION
+  INVENTORY_STOCK_SHEET_ID:  'REPLACE_WITH_INVENTORY_STOCK_SHEET_ID',
+  PRODUCT_CATALOG_SHEET_ID:  'REPLACE_WITH_PRODUCT_CATALOG_SHEET_ID',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
@@ -1110,6 +1404,17 @@ let state = {
   perfPeriod:        'today',  // 'today' | 'yesterday' | 'week' | 'month'
   dailyData:         [],       // parsed BDE_Daily_Performance rows
   dailyDataLoaded:   false,
+  // v5.4: Inventory module
+  inventoryUpdateAccess:    false,
+  inventoryDashboardAccess: false,
+  inventoryRole:            '',     // 'central' | 'manager' | 'tl' | ''
+  assignedCity:             '',     // city name, or 'ALL' for central
+  productCatalog:           [],     // [{product_id, product_name, category, active}]
+  productCatalogLoaded:     false,
+  inventoryStock:           [],     // [{record_id, city, tl_manager_name, product_id, product_name, total_stock, stock_not_in_use, stock_in_use, stock_damaged, stock_with_ex_bde, last_updated, updated_by_name, remarks}]
+  inventoryStockLoaded:     false,
+  invDetailRecord:          null,   // currently shown in modal
+  invEditingRecordId:       null,   // record_id we are editing on the update screen
 };
 
 
@@ -1258,6 +1563,11 @@ async function loadCreds() {
     onbIdx:         h.findIndex(c => c.includes('onboard')),
     dispNameIdx:    h.findIndex((c, i) => i > 0 && c === 'name'),
     refCodeIdx:     h.findIndex(c => c.includes('ref code') || c.includes('referral')),
+    // v5.4 — inventory columns (P, Q, R, S). Tolerant of header variants.
+    invUpdIdx:      h.findIndex(c => c.includes('inventory') && c.includes('update')),
+    invDashIdx:     h.findIndex(c => c.includes('inventory') && c.includes('dashboard')),
+    invRoleIdx:     h.findIndex(c => c.includes('inventory') && c.includes('role')),
+    assignedCityIdx:h.findIndex(c => c.includes('assigned') && c.includes('city')),
   };
 }
 
@@ -1273,7 +1583,7 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx } = await loadCreds();
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
       String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
       String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
@@ -1292,6 +1602,11 @@ async function doLogin() {
     state.onboarded         = onbIdx >= 0 ? toBoolean(match[onbIdx]) : false;
     state.displayName       = dispNameIdx >= 0 ? String(match[dispNameIdx] || '').trim() : '';
     state.referralCode      = refCodeIdx >= 0 ? String(match[refCodeIdx] || '').trim() : '';
+    // v5.4 — Inventory access + scope
+    state.inventoryUpdateAccess    = invUpdIdx  >= 0 ? toBoolean(match[invUpdIdx])  : false;
+    state.inventoryDashboardAccess = invDashIdx >= 0 ? toBoolean(match[invDashIdx]) : false;
+    state.inventoryRole            = invRoleIdx >= 0 ? String(match[invRoleIdx] || '').trim().toLowerCase() : '';
+    state.assignedCity             = assignedCityIdx >= 0 ? String(match[assignedCityIdx] || '').trim() : '';
 
     // If user has leaderboard access but never onboarded AND has no name in column M,
     // force them through the one-time onboarding form before home.
@@ -1334,7 +1649,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -1352,6 +1667,8 @@ function renderHomeCards() {
     { icon:'📲', title:'WhatsApp Blast',  sub:'Send your unique invite link',        access: state.blastAccess,       action:'startWhatsappBlast()' },
     { icon:'🏆', title:'My Performance',  sub:'See your rank & incentive earned',    access: state.leaderboardAccess, action:'openPerformance()' },
     { icon:'📊', title:'Slot Checker',    sub:'Live jobs, experts & utilization',    access: state.slotCheckerAccess, action:'startSlotChecker()' },
+    { icon:'📈', title:'Inventory Dashboard', sub:'Stock position across cities',     access: state.inventoryDashboardAccess, action:'openInventoryDashboard()' },
+    { icon:'📦', title:'Inventory Update',    sub:'Update stock for your location',   access: state.inventoryUpdateAccess,    action:'openInventoryUpdate()' },
   ];
   const accessible = cards.filter(c => c.access);
   const grid = document.getElementById('homeGrid');
@@ -2943,6 +3260,594 @@ window.addEventListener('load', () => {
     onLoggedIn();
   }
 });
+
+
+// ═════════════════════════════════════════════════════════════
+// INVENTORY MODULE (v5.4)
+// ═════════════════════════════════════════════════════════════
+//
+// TODO(v5.4-backend) — Apps Script changes required before submit works:
+//
+//   1. Create sheet "Inventory_Stock" with columns:
+//        A record_id | B city | C tl_manager_name | D product_id |
+//        E product_name | F total_stock | G stock_not_in_use |
+//        H stock_in_use | I stock_damaged | J stock_with_ex_bde |
+//        K last_updated | L updated_by_code | M updated_by_name |
+//        N remarks
+//      Share with "Anyone with the link — Viewer". Put its ID in
+//      CONFIG.INVENTORY_STOCK_SHEET_ID.
+//
+//   2. Create sheet "Product_Catalog" with columns:
+//        A product_id | B product_name | C category | D active
+//      Same sharing. Put its ID in CONFIG.PRODUCT_CATALOG_SHEET_ID.
+//
+//   3. Add a new action to doPost(e) in Apps Script:
+//        case 'upsertInventoryStock':
+//          // payload: { record_id, city, tl_manager_name, product_id,
+//          //   product_name, total_stock, stock_not_in_use, stock_in_use,
+//          //   stock_damaged, stock_with_ex_bde, remarks,
+//          //   updated_by_code, updated_by_name }
+//          // 1. Re-validate breakdown sum === total_stock.
+//          // 2. Re-validate role + city permission server-side.
+//          // 3. Find row in Inventory_Stock where A == record_id.
+//          //    If found, update cols B..N. Otherwise, append.
+//          // 4. Stamp K = new Date().toISOString().
+//          // 5. (Optional) Append a row to Inventory_Stock_Audit.
+//          // 6. Return { ok: true }.
+//
+// Until the backend is in place, submit will surface an error toast.
+// ─────────────────────────────────────────────────────────
+
+// Title-case helper — reuse the existing one if present.
+function _invTitleCase(s) {
+  if (!s) return '';
+  if (typeof titleCaseCity === 'function') return titleCaseCity(s);
+  return String(s).toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function _invToast(msg, kind) {
+  const t = document.getElementById('invToast');
+  t.textContent = msg;
+  t.className = 'inv-toast visible' + (kind ? ' ' + kind : '');
+  setTimeout(() => { t.classList.remove('visible'); }, 2800);
+}
+
+function _invFmtDate(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true });
+  } catch(e) { return iso; }
+}
+
+function _invDaysAgo(iso) {
+  if (!iso) return Infinity;
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return Infinity;
+    return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+  } catch(e) { return Infinity; }
+}
+
+function _invScopeLabel() {
+  const role = state.inventoryRole;
+  const city = state.assignedCity;
+  if (role === 'central' || (city && city.toUpperCase() === 'ALL')) return 'All Cities · Central';
+  if (city) return _invTitleCase(city) + ' · ' + (role === 'manager' ? 'Manager' : role === 'tl' ? 'TL' : 'View');
+  return 'Unscoped';
+}
+
+function _invInScope(record) {
+  if (state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL') return true;
+  if (!state.assignedCity) return false;
+  return String(record.city || '').toLowerCase() === state.assignedCity.toLowerCase();
+}
+
+// ─────────────────────────────────────────────────────────
+// DATA LOADERS
+// ─────────────────────────────────────────────────────────
+async function loadProductCatalog() {
+  if (state.productCatalogLoaded) return;
+  if (!CONFIG.PRODUCT_CATALOG_SHEET_ID || CONFIG.PRODUCT_CATALOG_SHEET_ID.startsWith('REPLACE_')) {
+    // No sheet wired yet — fall back to a small in-memory list so the UI is usable for testing.
+    state.productCatalog = [
+      { product_id: 'P001', product_name: 'Standee (6ft)',  category: 'Display',   active: true },
+      { product_id: 'P002', product_name: 'Gazebo (3x3m)',  category: 'Tent',      active: true },
+      { product_id: 'P003', product_name: 'Folding Table',  category: 'Furniture', active: true },
+      { product_id: 'P004', product_name: 'Banner Roll',    category: 'Display',   active: true },
+      { product_id: 'P005', product_name: 'Branded T-shirt',category: 'Apparel',   active: true },
+    ];
+    state.productCatalogLoaded = true;
+    return;
+  }
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.PRODUCT_CATALOG_SHEET_ID}/export?format=csv&gid=0`;
+  const res = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('PRODUCT_CATALOG_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
+  const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('product_id') || String(c).toLowerCase().includes('product id')));
+  if (headerIdx === -1) throw new Error('Product catalog header not found');
+  const h = rows[headerIdx].map(c => String(c).toLowerCase().trim());
+  const iId   = h.findIndex(c => c.includes('product_id') || c === 'product id');
+  const iName = h.findIndex(c => c.includes('product_name') || c === 'product name');
+  const iCat  = h.findIndex(c => c.includes('category'));
+  const iAct  = h.findIndex(c => c === 'active');
+  state.productCatalog = rows.slice(headerIdx + 1)
+    .filter(r => r[iId] && String(r[iId]).trim())
+    .map(r => ({
+      product_id:   String(r[iId] || '').trim(),
+      product_name: String(r[iName] || '').trim(),
+      category:     iCat >= 0 ? String(r[iCat] || '').trim() : '',
+      active:       iAct >= 0 ? toBoolean(r[iAct]) : true,
+    }))
+    .filter(p => p.active);
+  state.productCatalogLoaded = true;
+}
+
+async function loadInventoryStock(force) {
+  if (state.inventoryStockLoaded && !force) return;
+  if (!CONFIG.INVENTORY_STOCK_SHEET_ID || CONFIG.INVENTORY_STOCK_SHEET_ID.startsWith('REPLACE_')) {
+    // No sheet wired — provide a few demo rows so the dashboard renders.
+    state.inventoryStock = _invDemoRows();
+    state.inventoryStockLoaded = true;
+    return;
+  }
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.INVENTORY_STOCK_SHEET_ID}/export?format=csv&gid=0`;
+  const res = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('INVENTORY_STOCK_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
+  const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('record_id') || String(c).toLowerCase().includes('record id')));
+  if (headerIdx === -1) throw new Error('Inventory stock header not found');
+  const h = rows[headerIdx].map(c => String(c).toLowerCase().replace(/\s+/g, '_').trim());
+  const col = name => h.findIndex(c => c === name || c === name.replace(/_/g,''));
+  const idx = {
+    record_id:        col('record_id'),
+    city:             col('city'),
+    tl_manager_name:  col('tl_manager_name'),
+    product_id:       col('product_id'),
+    product_name:     col('product_name'),
+    total_stock:      col('total_stock'),
+    stock_not_in_use: col('stock_not_in_use'),
+    stock_in_use:     col('stock_in_use'),
+    stock_damaged:    col('stock_damaged'),
+    stock_with_ex_bde:col('stock_with_ex_bde'),
+    last_updated:     col('last_updated'),
+    updated_by_name:  col('updated_by_name'),
+    remarks:          col('remarks'),
+  };
+  const num = v => parseInt(String(v || '0').replace(/[^0-9-]/g,''), 10) || 0;
+  state.inventoryStock = rows.slice(headerIdx + 1)
+    .filter(r => r[idx.record_id] && String(r[idx.record_id]).trim())
+    .map(r => ({
+      record_id:        String(r[idx.record_id] || '').trim(),
+      city:             String(r[idx.city] || '').trim(),
+      tl_manager_name:  String(r[idx.tl_manager_name] || '').trim(),
+      product_id:       String(r[idx.product_id] || '').trim(),
+      product_name:     String(r[idx.product_name] || '').trim(),
+      total_stock:      num(r[idx.total_stock]),
+      stock_not_in_use: num(r[idx.stock_not_in_use]),
+      stock_in_use:     num(r[idx.stock_in_use]),
+      stock_damaged:    num(r[idx.stock_damaged]),
+      stock_with_ex_bde:num(r[idx.stock_with_ex_bde]),
+      last_updated:     String(r[idx.last_updated] || '').trim(),
+      updated_by_name:  String(r[idx.updated_by_name] || '').trim(),
+      remarks:          String(r[idx.remarks] || '').trim(),
+    }));
+  state.inventoryStockLoaded = true;
+}
+
+function _invDemoRows() {
+  // Demo data so reviewers can play with the UI before the sheet is wired.
+  const today = new Date().toISOString();
+  const dayAgo = (n) => new Date(Date.now() - n*86400000).toISOString();
+  return [
+    { record_id:'BLR-P001', city:'Bengaluru', tl_manager_name:'Ramesh K.', product_id:'P001', product_name:'Standee (6ft)', total_stock:100, stock_not_in_use:40, stock_in_use:45, stock_damaged:10, stock_with_ex_bde:5,  last_updated: dayAgo(2),  updated_by_name:'Ramesh K.', remarks:'2 standees damaged in last event.' },
+    { record_id:'BLR-P002', city:'Bengaluru', tl_manager_name:'Ramesh K.', product_id:'P002', product_name:'Gazebo (3x3m)', total_stock:20,  stock_not_in_use:8,  stock_in_use:12, stock_damaged:0,  stock_with_ex_bde:0,  last_updated: dayAgo(1),  updated_by_name:'Ramesh K.', remarks:'' },
+    { record_id:'MUM-P001', city:'Mumbai',    tl_manager_name:'Sneha V.',  product_id:'P001', product_name:'Standee (6ft)', total_stock:80,  stock_not_in_use:30, stock_in_use:35, stock_damaged:8,  stock_with_ex_bde:7,  last_updated: dayAgo(10), updated_by_name:'Sneha V.',  remarks:'Ex-BDE Arjun has 7 standees pending recovery.' },
+    { record_id:'MUM-P003', city:'Mumbai',    tl_manager_name:'Sneha V.',  product_id:'P003', product_name:'Folding Table', total_stock:30,  stock_not_in_use:30, stock_in_use:0,  stock_damaged:0,  stock_with_ex_bde:0,  last_updated: dayAgo(35), updated_by_name:'Sneha V.',  remarks:'' },
+    { record_id:'PUN-P002', city:'Pune',      tl_manager_name:'Vikram S.', product_id:'P002', product_name:'Gazebo (3x3m)', total_stock:15,  stock_not_in_use:0,  stock_in_use:0,  stock_damaged:0,  stock_with_ex_bde:0,  last_updated: dayAgo(4),  updated_by_name:'Central', remarks:'Newly dispatched.' },
+  ];
+}
+
+// ─────────────────────────────────────────────────────────
+// DASHBOARD (Option 1)
+// ─────────────────────────────────────────────────────────
+async function openInventoryDashboard() {
+  hideMsg('invDashError');
+  document.getElementById('invDashScope').innerHTML = 'Scope: <b>' + _invScopeLabel() + '</b>';
+  document.getElementById('invDashContent').style.display = 'none';
+  document.getElementById('invDashLoading').style.display = 'flex';
+  document.getElementById('invDashGoToUpdate').style.display = state.inventoryUpdateAccess ? 'block' : 'none';
+  navigate('screen-inventory-dashboard');
+
+  try {
+    await Promise.all([ loadProductCatalog(), loadInventoryStock(true) ]);
+    renderInventoryDashboard();
+  } catch (e) {
+    showError('invDashError', 'Could not load inventory data. ' + (e && e.message ? e.message : ''));
+  } finally {
+    document.getElementById('invDashLoading').style.display = 'none';
+  }
+}
+
+function renderInventoryDashboard() {
+  const scoped = state.inventoryStock.filter(_invInScope);
+  document.getElementById('invDashContent').style.display = 'block';
+
+  // ── KPI tiles
+  const totals = scoped.reduce((a, r) => ({
+    total:  a.total  + r.total_stock,
+    inUse:  a.inUse  + r.stock_in_use,
+    dmg:    a.dmg    + r.stock_damaged,
+    exBde:  a.exBde  + r.stock_with_ex_bde,
+  }), { total:0, inUse:0, dmg:0, exBde:0 });
+  const pct = (n) => totals.total ? Math.round(n * 100 / totals.total) : 0;
+  const tilesEl = document.getElementById('invDashTiles');
+  tilesEl.innerHTML = `
+    <div class="inv-tile">
+      <div class="inv-tile-label">Total Stock</div>
+      <div class="inv-tile-value">${totals.total}</div>
+      <div class="inv-tile-sub">${scoped.length} records</div>
+    </div>
+    <div class="inv-tile">
+      <div class="inv-tile-label">In Use</div>
+      <div class="inv-tile-value">${totals.inUse}</div>
+      <div class="inv-tile-sub">${pct(totals.inUse)}% of total</div>
+    </div>
+    <div class="inv-tile ${pct(totals.dmg) > 15 ? 'alert' : ''}">
+      <div class="inv-tile-label">Damaged</div>
+      <div class="inv-tile-value">${totals.dmg}</div>
+      <div class="inv-tile-sub">${pct(totals.dmg)}% of total</div>
+    </div>
+    <div class="inv-tile ${totals.exBde > 0 ? 'warn' : ''}">
+      <div class="inv-tile-label">With Ex-BDE</div>
+      <div class="inv-tile-value">${totals.exBde}</div>
+      <div class="inv-tile-sub">${pct(totals.exBde)}% of total</div>
+    </div>
+  `;
+
+  // ── Alerts
+  const alerts = [];
+  const stale = scoped.filter(r => _invDaysAgo(r.last_updated) > 7);
+  if (stale.length) alerts.push({ kind:'amber', icon:'⏳', title:`${stale.length} record${stale.length>1?'s':''} not updated this week`, sub:'Last update older than 7 days.' });
+  const dmgSpike = scoped.filter(r => r.total_stock >= 4 && (r.stock_damaged / r.total_stock) > 0.25);
+  if (dmgSpike.length) alerts.push({ kind:'red', icon:'⚠️', title:`${dmgSpike.length} record${dmgSpike.length>1?'s':''} with damage above 25%`, sub:'Investigate or initiate repair/replacement.' });
+  const exBdeOld = scoped.filter(r => r.stock_with_ex_bde > 0 && _invDaysAgo(r.last_updated) > 30);
+  if (exBdeOld.length) alerts.push({ kind:'red', icon:'👤', title:`${exBdeOld.length} record${exBdeOld.length>1?'s':''} with ex-BDE stock un-recovered for 30+ days`, sub:'Escalate to Central Team.' });
+  const uninit = scoped.filter(r => r.total_stock === 0 && r.stock_not_in_use+r.stock_in_use+r.stock_damaged+r.stock_with_ex_bde === 0 && _invDaysAgo(r.last_updated) > 3);
+  if (uninit.length) alerts.push({ kind:'amber', icon:'🆕', title:`${uninit.length} record${uninit.length>1?'s':''} await initialisation`, sub:'Central Team has not yet set Total Stock.' });
+  const mismatch = scoped.filter(r => (r.stock_not_in_use+r.stock_in_use+r.stock_damaged+r.stock_with_ex_bde) !== r.total_stock);
+  if (mismatch.length) alerts.push({ kind:'red', icon:'🧮', title:`${mismatch.length} record${mismatch.length>1?'s':''} with breakdown mismatch`, sub:'Sum of breakdown ≠ Total Stock. Data hygiene check.' });
+  const alertsEl = document.getElementById('invDashAlerts');
+  if (alerts.length === 0) {
+    alertsEl.innerHTML = `<div class="lb-empty">All clear. No alerts for your scope.</div>`;
+  } else {
+    alertsEl.innerHTML = alerts.map(a => `
+      <div class="inv-alert-row ${a.kind}">
+        <div class="inv-alert-icon">${a.icon}</div>
+        <div class="inv-alert-body">
+          <div class="inv-alert-title">${a.title}</div>
+          <div class="inv-alert-sub">${a.sub}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // ── City × Item matrix
+  const byCity = {};
+  scoped.forEach(r => {
+    if (!byCity[r.city]) byCity[r.city] = { city: r.city, tl: r.tl_manager_name, items: [], total: 0 };
+    byCity[r.city].items.push(r);
+    byCity[r.city].total += r.total_stock;
+  });
+  const cities = Object.values(byCity).sort((a,b) => a.city.localeCompare(b.city));
+  const matrixEl = document.getElementById('invDashMatrix');
+  if (cities.length === 0) {
+    matrixEl.innerHTML = `<div class="lb-empty">No inventory records in your scope yet.</div>`;
+  } else {
+    matrixEl.innerHTML = cities.map(c => `
+      <div class="inv-city-card">
+        <div class="inv-city-card-h">
+          <div class="inv-city-name">${_invTitleCase(c.city)}</div>
+          <div class="inv-city-total">Total · <b>${c.total}</b></div>
+        </div>
+        ${c.items.map(r => {
+          const total = Math.max(r.total_stock, 1);
+          const pNot  = (r.stock_not_in_use / total) * 100;
+          const pUse  = (r.stock_in_use     / total) * 100;
+          const pDmg  = (r.stock_damaged    / total) * 100;
+          const pEx   = (r.stock_with_ex_bde/ total) * 100;
+          return `
+            <div class="inv-item-row" onclick="openInvDetail('${r.record_id}')">
+              <div class="inv-item-name">${r.product_name || r.product_id}</div>
+              <div class="inv-item-bar" title="${r.stock_not_in_use}/${r.stock_in_use}/${r.stock_damaged}/${r.stock_with_ex_bde}">
+                <div class="inv-item-bar-seg inv-item-bar-good"  style="width:${pNot}%"></div>
+                <div class="inv-item-bar-seg inv-item-bar-inuse" style="width:${pUse}%"></div>
+                <div class="inv-item-bar-seg inv-item-bar-dmg"   style="width:${pDmg}%"></div>
+                <div class="inv-item-bar-seg inv-item-bar-exbde" style="width:${pEx}%"></div>
+              </div>
+              <div class="inv-item-total">${r.total_stock}</div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `).join('');
+  }
+
+  // ── Recent updates feed (last 20 in scope)
+  const feed = scoped
+    .filter(r => r.last_updated)
+    .sort((a,b) => (b.last_updated || '').localeCompare(a.last_updated || ''))
+    .slice(0, 20);
+  const feedEl = document.getElementById('invDashFeed');
+  if (feed.length === 0) {
+    feedEl.innerHTML = `<div class="lb-empty">No recent updates.</div>`;
+  } else {
+    feedEl.innerHTML = feed.map(r => `
+      <div class="inv-feed-row" onclick="openInvDetail('${r.record_id}')" style="cursor:pointer">
+        <div class="inv-feed-meta">${_invFmtDate(r.last_updated)} · ${_invTitleCase(r.city)}</div>
+        <div class="inv-feed-title">${r.product_name}</div>
+        <div class="inv-feed-sub">By ${r.updated_by_name || '—'} · Total ${r.total_stock} (${r.stock_in_use} in use, ${r.stock_damaged} damaged)</div>
+      </div>
+    `).join('');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// DETAIL MODAL
+// ─────────────────────────────────────────────────────────
+function openInvDetail(recordId) {
+  const r = state.inventoryStock.find(x => x.record_id === recordId);
+  if (!r) return;
+  state.invDetailRecord = r;
+  document.getElementById('invDetailTitle').textContent = r.product_name;
+  document.getElementById('invDetailMeta').textContent = _invTitleCase(r.city) + ' · TL: ' + (r.tl_manager_name || '—');
+  const sum = r.stock_not_in_use + r.stock_in_use + r.stock_damaged + r.stock_with_ex_bde;
+  const matchTag = sum === r.total_stock
+    ? '<span style="color:#00966A">✓</span>'
+    : '<span style="color:var(--error)">⚠ ' + sum + ' vs ' + r.total_stock + '</span>';
+  document.getElementById('invDetailBody').innerHTML = `
+    <div class="inv-detail-row"><span class="k">Total Stock</span><span class="v">${r.total_stock}</span></div>
+    <div class="inv-detail-row"><span class="k">Not in Use</span><span class="v">${r.stock_not_in_use}</span></div>
+    <div class="inv-detail-row"><span class="k">In Use</span><span class="v">${r.stock_in_use}</span></div>
+    <div class="inv-detail-row"><span class="k">Damaged</span><span class="v">${r.stock_damaged}</span></div>
+    <div class="inv-detail-row"><span class="k">With Ex-BDE</span><span class="v">${r.stock_with_ex_bde}</span></div>
+    <div class="inv-detail-row"><span class="k">Breakdown check</span><span class="v">${matchTag}</span></div>
+    <div class="inv-detail-row"><span class="k">Last updated</span><span class="v">${_invFmtDate(r.last_updated)}</span></div>
+    <div class="inv-detail-row"><span class="k">Updated by</span><span class="v">${r.updated_by_name || '—'}</span></div>
+  `;
+  const remarkEl = document.getElementById('invDetailRemark');
+  if (r.remarks) { remarkEl.style.display = 'block'; remarkEl.textContent = '“' + r.remarks + '”'; }
+  else { remarkEl.style.display = 'none'; }
+  document.getElementById('invDetailEditBtn').style.display = (state.inventoryUpdateAccess && _invInScope(r)) ? 'block' : 'none';
+  document.getElementById('invDetailModal').classList.add('visible');
+}
+function closeInvDetail() {
+  document.getElementById('invDetailModal').classList.remove('visible');
+  state.invDetailRecord = null;
+}
+function editFromDetail() {
+  const r = state.invDetailRecord;
+  if (!r) return;
+  closeInvDetail();
+  openInventoryUpdate(r.record_id);
+}
+
+// ─────────────────────────────────────────────────────────
+// UPDATE FORM (Option 2)
+// ─────────────────────────────────────────────────────────
+async function openInventoryUpdate(prefillRecordId) {
+  hideMsg('invUpdateError');
+  hideMsg('invUpdateSuccess');
+  state.invEditingRecordId = prefillRecordId || null;
+  document.getElementById('invUpdateScope').innerHTML = 'Scope: <b>' + _invScopeLabel() + '</b>';
+  navigate('screen-inventory-update');
+
+  try {
+    await Promise.all([ loadProductCatalog(), loadInventoryStock(true) ]);
+  } catch(e) {
+    showError('invUpdateError', 'Could not load supporting data. ' + (e && e.message ? e.message : ''));
+    return;
+  }
+
+  // City dropdown
+  const role = state.inventoryRole;
+  const isCentral = role === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  const citySel = document.getElementById('invCitySelect');
+  const allCities = Array.from(new Set(state.inventoryStock.map(r => r.city).filter(Boolean))).sort();
+  if (isCentral) {
+    citySel.disabled = false;
+    citySel.innerHTML = ['<option value="">Select city…</option>']
+      .concat(allCities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`)).join('');
+  } else {
+    citySel.disabled = true;
+    const c = state.assignedCity || '';
+    citySel.innerHTML = `<option value="${c}">${_invTitleCase(c)}</option>`;
+    citySel.value = c;
+  }
+
+  // Product dropdown
+  const itemSel = document.getElementById('invItemSelect');
+  itemSel.innerHTML = ['<option value="">Select item…</option>']
+    .concat(state.productCatalog.map(p => `<option value="${p.product_id}">${p.product_name}</option>`)).join('');
+
+  // Total Stock lock
+  const totalEl = document.getElementById('invTotalStock');
+  const lockNote = document.getElementById('invTotalStockLockNote');
+  if (isCentral) { totalEl.readOnly = false; lockNote.style.display = 'none'; }
+  else            { totalEl.readOnly = true;  lockNote.style.display = 'block'; }
+
+  // Pre-fill (if editing) or reset
+  document.getElementById('invTLName').value = state.agentName || '';
+  if (prefillRecordId) {
+    const r = state.inventoryStock.find(x => x.record_id === prefillRecordId);
+    if (r) {
+      citySel.value = r.city;
+      itemSel.value = r.product_id;
+      document.getElementById('invTLName').value = r.tl_manager_name || state.agentName || '';
+      totalEl.value                                 = r.total_stock;
+      document.getElementById('invStockNotInUse').value = r.stock_not_in_use;
+      document.getElementById('invStockInUse').value    = r.stock_in_use;
+      document.getElementById('invStockDamaged').value  = r.stock_damaged;
+      document.getElementById('invStockExBDE').value    = r.stock_with_ex_bde;
+      document.getElementById('invRemarks').value       = r.remarks || '';
+    }
+  } else {
+    totalEl.value = 0;
+    document.getElementById('invStockNotInUse').value = 0;
+    document.getElementById('invStockInUse').value    = 0;
+    document.getElementById('invStockDamaged').value  = 0;
+    document.getElementById('invStockExBDE').value    = 0;
+    document.getElementById('invRemarks').value       = '';
+  }
+  recomputeInvMatch();
+}
+
+function onInvCityChange() {
+  // If we have an existing record for this (city, product), pre-fill from it.
+  _prefillFromExisting();
+}
+function onInvItemChange() {
+  _prefillFromExisting();
+}
+function _prefillFromExisting() {
+  const city = document.getElementById('invCitySelect').value;
+  const pid  = document.getElementById('invItemSelect').value;
+  if (!city || !pid) return;
+  const recordId = `${city.substring(0,3).toUpperCase()}-${pid}`;
+  // Try exact record_id match first, then (city, product_id) fallback.
+  const existing = state.inventoryStock.find(r => r.record_id === recordId)
+                || state.inventoryStock.find(r => r.city === city && r.product_id === pid);
+  if (existing) {
+    state.invEditingRecordId = existing.record_id;
+    document.getElementById('invTLName').value = existing.tl_manager_name || state.agentName || '';
+    document.getElementById('invTotalStock').value     = existing.total_stock;
+    document.getElementById('invStockNotInUse').value  = existing.stock_not_in_use;
+    document.getElementById('invStockInUse').value     = existing.stock_in_use;
+    document.getElementById('invStockDamaged').value   = existing.stock_damaged;
+    document.getElementById('invStockExBDE').value     = existing.stock_with_ex_bde;
+    document.getElementById('invRemarks').value        = existing.remarks || '';
+  } else {
+    state.invEditingRecordId = null;
+  }
+  recomputeInvMatch();
+}
+
+function recomputeInvMatch() {
+  const total = parseInt(document.getElementById('invTotalStock').value || '0', 10);
+  const a = parseInt(document.getElementById('invStockNotInUse').value || '0', 10);
+  const b = parseInt(document.getElementById('invStockInUse').value     || '0', 10);
+  const c = parseInt(document.getElementById('invStockDamaged').value   || '0', 10);
+  const d = parseInt(document.getElementById('invStockExBDE').value     || '0', 10);
+  const sum = a + b + c + d;
+  const pill = document.getElementById('invMatchPill');
+  const btn  = document.getElementById('invSubmitBtn');
+  if (sum === total && total >= 0) {
+    pill.className = 'inv-match-pill inv-match-ok';
+    pill.textContent = `✓ Breakdown matches Total Stock (${sum} / ${total})`;
+    btn.disabled = false;
+  } else {
+    pill.className = 'inv-match-pill inv-match-warn';
+    const diff = sum - total;
+    pill.textContent = `Breakdown total: ${sum} / ${total} — ` + (diff > 0 ? `over by ${diff}` : `short by ${-diff}`);
+    btn.disabled = true;
+  }
+}
+
+async function submitInventoryUpdate() {
+  hideMsg('invUpdateError');
+  hideMsg('invUpdateSuccess');
+
+  const city = document.getElementById('invCitySelect').value.trim();
+  const tl   = document.getElementById('invTLName').value.trim();
+  const pid  = document.getElementById('invItemSelect').value.trim();
+  const pname = (state.productCatalog.find(p => p.product_id === pid) || {}).product_name || '';
+  const total = parseInt(document.getElementById('invTotalStock').value || '0', 10);
+  const a = parseInt(document.getElementById('invStockNotInUse').value || '0', 10);
+  const b = parseInt(document.getElementById('invStockInUse').value     || '0', 10);
+  const c = parseInt(document.getElementById('invStockDamaged').value   || '0', 10);
+  const d = parseInt(document.getElementById('invStockExBDE').value     || '0', 10);
+  const remarks = document.getElementById('invRemarks').value.trim();
+
+  if (!city || !pid || !tl) {
+    showError('invUpdateError', 'Please fill all required fields before submitting.');
+    return;
+  }
+  if ([total,a,b,c,d].some(n => Number.isNaN(n) || n < 0)) {
+    showError('invUpdateError', 'All stock values must be whole numbers, zero or greater.');
+    return;
+  }
+  if (a + b + c + d !== total) {
+    showError('invUpdateError', 'Stock breakup does not match Total Stock. Please check the entered quantities before submitting.');
+    return;
+  }
+
+  // Permission check (client-side; backend MUST re-check)
+  const isCentral = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  if (!isCentral && state.assignedCity && city.toLowerCase() !== state.assignedCity.toLowerCase()) {
+    showError('invUpdateError', "You don't have permission to update inventory for this city.");
+    return;
+  }
+
+  const recordId = state.invEditingRecordId || `${city.substring(0,3).toUpperCase()}-${pid}`;
+  const payload = {
+    action: 'upsertInventoryStock',
+    record_id:        recordId,
+    city:             city,
+    tl_manager_name:  tl,
+    product_id:       pid,
+    product_name:     pname,
+    total_stock:      total,
+    stock_not_in_use: a,
+    stock_in_use:     b,
+    stock_damaged:    c,
+    stock_with_ex_bde:d,
+    remarks:          remarks,
+    updated_by_code:  state.agentCode,
+    updated_by_name:  state.agentName,
+    sheetId:          CONFIG.INVENTORY_STOCK_SHEET_ID,
+  };
+
+  const btn = document.getElementById('invSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    // If sheet ID not configured, skip the network call and just optimistically update the cached state.
+    if (CONFIG.INVENTORY_STOCK_SHEET_ID && !CONFIG.INVENTORY_STOCK_SHEET_ID.startsWith('REPLACE_')) {
+      await postToScript(payload);
+    } else {
+      _invToast('Demo mode — backend not wired. Update is local only.', 'error');
+    }
+    // Optimistically update the local cache so the dashboard reflects immediately.
+    const now = new Date().toISOString();
+    const idx = state.inventoryStock.findIndex(r => r.record_id === recordId);
+    const newRow = {
+      record_id: recordId, city, tl_manager_name: tl, product_id: pid, product_name: pname,
+      total_stock: total, stock_not_in_use: a, stock_in_use: b, stock_damaged: c, stock_with_ex_bde: d,
+      last_updated: now, updated_by_name: state.agentName, remarks
+    };
+    if (idx >= 0) state.inventoryStock[idx] = newRow;
+    else state.inventoryStock.push(newRow);
+
+    _invToast('Saved · ' + pname + ' · ' + _invTitleCase(city), 'success');
+    const successEl = document.getElementById('invUpdateSuccess');
+    successEl.textContent = 'Inventory updated for ' + _invTitleCase(city) + ' · ' + pname + '.';
+    successEl.style.display = 'block';
+    btn.textContent = 'Saved ✓';
+    setTimeout(() => { btn.textContent = 'Save Update'; btn.disabled = false; }, 1500);
+  } catch (e) {
+    showError('invUpdateError', 'Could not save. Please check your connection and try again.');
+    btn.disabled = false; btn.textContent = 'Save Update';
+  }
+}
+// ═════════════════════════════════════════════════════════════
+// END INVENTORY MODULE
+// ═════════════════════════════════════════════════════════════
 </script>
 </body>
 </html>
