@@ -1321,9 +1321,9 @@ const CONFIG = {
   PERFORMANCE_SHEET_ID:      '1sCzhhkVlrSijVNwo9NwDVxldv1E7y2Xjh53Z3PPoyWU',
   INCENTIVE_CONFIG_SHEET_ID: '11XgLAKpWjzSq8jZAZfqq7R83zEx-M0jH3FGga6qnWj8',
   SLOT_CHECKER_SHEET_ID:     '1PzO_a9cwBbgvAvjNhCgu8UWgecdTKH37Q-rbIQI0f6o',
-  // v5.4 — REPLACE THESE TWO IDS BEFORE PRODUCTION
-  INVENTORY_STOCK_SHEET_ID:  'REPLACE_WITH_INVENTORY_STOCK_SHEET_ID',
-  PRODUCT_CATALOG_SHEET_ID:  'REPLACE_WITH_PRODUCT_CATALOG_SHEET_ID',
+  // v5.4 — Inventory module (sheets created and wired in)
+  INVENTORY_STOCK_SHEET_ID:  '1rPSW6Fgwg9ihjSk_AHCN04hlAqaYNxLTDbLY8AibXPo',
+  PRODUCT_CATALOG_SHEET_ID:  '1upHJLP9lI-pjvU8xEXMgCVtgP-6yDlCYYAA3EwuY40o',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
@@ -3369,7 +3369,16 @@ async function loadProductCatalog() {
   }
   const rows = parseCSV(text);
   const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('product_id') || String(c).toLowerCase().includes('product id')));
-  if (headerIdx === -1) throw new Error('Product catalog header not found');
+  if (headerIdx === -1) {
+    // Empty / unconfigured catalog — fall back to a small starter list so the form is still usable.
+    state.productCatalog = [
+      { product_id: 'P001', product_name: 'Standee (6ft)',  category: 'Display',   active: true },
+      { product_id: 'P002', product_name: 'Gazebo (3x3m)',  category: 'Tent',      active: true },
+      { product_id: 'P003', product_name: 'Folding Table',  category: 'Furniture', active: true },
+    ];
+    state.productCatalogLoaded = true;
+    return;
+  }
   const h = rows[headerIdx].map(c => String(c).toLowerCase().trim());
   const iId   = h.findIndex(c => c.includes('product_id') || c === 'product id');
   const iName = h.findIndex(c => c.includes('product_name') || c === 'product name');
@@ -3395,7 +3404,9 @@ async function loadInventoryStock(force) {
     state.inventoryStockLoaded = true;
     return;
   }
-  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.INVENTORY_STOCK_SHEET_ID}/export?format=csv&gid=0`;
+  // Fetch the "Inventory_Stock" tab by name via gviz. The spreadsheet also has
+  // an "Inventory_Stock_Audit" tab; we only want the main tab here.
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.INVENTORY_STOCK_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Inventory_Stock`;
   const res = await fetch(url);
   const text = await res.text();
   if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
@@ -3403,7 +3414,12 @@ async function loadInventoryStock(force) {
   }
   const rows = parseCSV(text);
   const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('record_id') || String(c).toLowerCase().includes('record id')));
-  if (headerIdx === -1) throw new Error('Inventory stock header not found');
+  if (headerIdx === -1) {
+    // Empty sheet (no header yet) — treat as empty inventory. First write will create the header.
+    state.inventoryStock = [];
+    state.inventoryStockLoaded = true;
+    return;
+  }
   const h = rows[headerIdx].map(c => String(c).toLowerCase().replace(/\s+/g, '_').trim());
   const col = name => h.findIndex(c => c === name || c === name.replace(/_/g,''));
   const idx = {
