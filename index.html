@@ -918,7 +918,7 @@
   <div id="resultsContent"></div>
   <div id="confirmMatchForm" style="display:none">
     <div class="input-wrap" style="margin-top:4px">
-      <input type="number" id="existingFlatCount" placeholder="Confirm / update flat count" min="1" />
+      <input type="number" id="existingFlatCount" placeholder="Confirm flat count (required)" min="1" required />
     </div>
     <div class="input-wrap">
       <textarea id="existingNotes" placeholder="Notes (optional) — gate type, RWA contact, etc."></textarea>
@@ -2013,6 +2013,7 @@ async function submitMatch() {
   const flatCount = document.getElementById('existingFlatCount').value.trim();
   const notes     = document.getElementById('existingNotes').value.trim();
   const btn       = document.getElementById('submitMatchBtn');
+  if (!flatCount) { alert('Please confirm the flat count before submitting.'); return; }
   btn.disabled = true; btn.textContent = 'Checking…';
   const societyName    = state.selectedSociety.name;
   const alreadySub     = await checkIfAlreadySubmitted(societyName);
@@ -2026,13 +2027,13 @@ async function submitMatch() {
     societyName,
     latitude:       state.userLat,
     longitude:      state.userLon,
-    flatCount:      flatCount || 'Not updated',
+    flatCount:      flatCount,
     isNew,
     partOfDatabase: 'Yes',
     nanoMarket:     state.selectedSociety.liveNM || '',
     notes,
   });
-  showSocietySuccess({ societyName, flatCount: flatCount || 'Not updated', isNew, partOfDatabase: 'Yes', nanoMarket: state.selectedSociety.liveNM || '—' });
+  showSocietySuccess({ societyName, flatCount: flatCount, isNew, partOfDatabase: 'Yes', nanoMarket: state.selectedSociety.liveNM || '—' });
 }
 
 async function submitNew() {
