@@ -7,8 +7,47 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 5.4
+  VERSION     : 5.5
   LAST UPDATED: May 2026
+
+  CHANGES IN v5.5:
+    1. NEW MODULE: Requirement Request (Module 3 from the PRD).
+       - TLs/Managers can raise a request for additional stock for
+         their city.
+       - Central Team can review pending requests and Approve / Reject
+         / mark as Fulfilled.
+       - "Required Quantity" on the Dashboard now comes alive — shows
+         the sum of open (Pending + Approved) request quantities per
+         (city × product).
+    2. New sheet: Inventory_Requirements
+         A request_id | B agent_code | C agent_name | D city |
+         E product_id | F product_name | G required_qty |
+         H required_by_date | I reason | J status |
+         K request_date | L resolved_date | M resolved_by_name |
+         N remarks
+       Status values: Pending / Approved / Rejected / Fulfilled.
+    3. Apps Script — two new actions:
+         submitRequirementRequest  (TLs/Managers)
+         updateRequirementStatus   (Central Team only)
+    4. New home cards:
+         📝 Request More Stock   — for TLs/Managers + Central
+         ✅ Review Requests      — for Central only (admin queue)
+    5. State: state.inventoryRequests cached on screen open.
+
+  CHANGES IN v5.4.1 (refinements aligning v5.4 with the formal PRD):
+    1. TL / Manager Name is now a proper dropdown, sourced from the
+       Login Credentials sheet (anyone with inventoryRole = 'manager'
+       or 'tl'), filtered by selected city.
+       - For Central Team: dropdown shows all TLs/Managers; auto-filters
+         when a city is chosen.
+       - For TL/Manager: locked to their own name (single option).
+    2. Dashboard now displays an additional column "Required Qty" in
+       the city × item matrix and detail modal. Comes alive once
+       Requirement Request module (v5.5) ships. Currently shows '—'.
+    3. Field labelling cleanup to match the requirement doc:
+       - Dashboard tile "Total Stock" relabelled "Total Stock Received".
+       - Update form keeps shorter "Total Stock" label.
+    4. Cleaned up logout reset to also clear new state added in v5.4.
 
   CHANGES IN v5.4:
     1. NEW MODULE: Inventory Management — two new screens gated by two
@@ -760,6 +799,79 @@
   .inv-toast.error { background: var(--error); }
   .inv-toast.success { background: var(--success); }
 
+  /* ── REQUIREMENT REQUESTS (v5.5) ── */
+  /* Status pills for requirement requests */
+  .req-status {
+    display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.6px;
+    text-transform: uppercase; padding: 4px 10px; border-radius: 999px;
+  }
+  .req-status-pending   { background: #FFF7E6; color: #B8860B; border: 1.5px solid #FFD699; }
+  .req-status-approved  { background: rgba(34,118,255,0.10); color: #1A5BD6; border: 1.5px solid rgba(34,118,255,0.3); }
+  .req-status-rejected  { background: #FFF0F5; color: var(--error); border: 1.5px solid rgba(255,31,125,0.3); }
+  .req-status-fulfilled { background: rgba(0,196,140,0.12); color: #00966A; border: 1.5px solid rgba(0,196,140,0.3); }
+
+  /* A request card — used on both "my requests" tab and admin queue */
+  .req-card {
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: 14px; padding: 12px 14px; margin-bottom: 10px;
+  }
+  .req-card-h {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; margin-bottom: 8px;
+  }
+  .req-card-title { font-size: 14px; font-weight: 800; color: var(--navy); }
+  .req-card-meta { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 2px; }
+  .req-card-body { font-size: 12px; color: var(--navy2); line-height: 1.5; }
+  .req-card-body .qty { font-weight: 800; color: var(--accent); font-size: 14px; }
+  .req-card-actions {
+    display: flex; gap: 8px; margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .req-action-btn {
+    flex: 1; padding: 8px 10px; border-radius: 10px; font-size: 12px;
+    font-weight: 700; cursor: pointer; border: 1.5px solid var(--border);
+    background: var(--surface); color: var(--navy);
+    transition: all 0.15s;
+  }
+  .req-action-btn:hover { background: var(--surface2); }
+  .req-action-btn.approve  { background: rgba(0,196,140,0.10); border-color: rgba(0,196,140,0.3); color: #00966A; }
+  .req-action-btn.fulfil   { background: rgba(34,118,255,0.10); border-color: rgba(34,118,255,0.3); color: #1A5BD6; }
+  .req-action-btn.reject   { background: #FFF0F5; border-color: rgba(255,31,125,0.3); color: var(--error); }
+
+  /* Admin queue tab strip */
+  .req-tabs {
+    display: flex; gap: 6px; margin-bottom: 14px;
+    overflow-x: auto; padding-bottom: 4px;
+  }
+  .req-tab {
+    flex-shrink: 0; padding: 8px 14px; border-radius: 999px;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    background: var(--surface2); color: var(--muted); border: 1.5px solid var(--border);
+  }
+  .req-tab.active {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+  .req-tab .count {
+    display: inline-block; background: rgba(255,255,255,0.25);
+    border-radius: 999px; padding: 1px 7px; margin-left: 6px; font-size: 10px;
+  }
+  /* A simpler 2-tab strip used inside the Request Stock screen */
+  .tab-strip {
+    display: flex; gap: 6px; margin-bottom: 14px;
+    background: var(--surface2); border-radius: 12px; padding: 4px;
+  }
+  .tab-pill {
+    flex: 1; text-align: center; padding: 8px 10px;
+    font-size: 13px; font-weight: 700; color: var(--muted);
+    border-radius: 8px; cursor: pointer;
+  }
+  .tab-pill.active { background: var(--surface); color: var(--accent); box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .tab-count {
+    display: inline-block; margin-left: 4px; padding: 1px 7px;
+    background: var(--accent); color: #fff; border-radius: 999px;
+    font-size: 10px; font-weight: 800; vertical-align: middle;
+  }
+
 </style>
 </head>
 <body>
@@ -918,7 +1030,7 @@
   <div id="resultsContent"></div>
   <div id="confirmMatchForm" style="display:none">
     <div class="input-wrap" style="margin-top:4px">
-      <input type="number" id="existingFlatCount" placeholder="Confirm flat count (required)" min="1" required />
+      <input type="number" id="existingFlatCount" placeholder="Confirm / update flat count" min="1" />
     </div>
     <div class="input-wrap">
       <textarea id="existingNotes" placeholder="Notes (optional) — gate type, RWA contact, etc."></textarea>
@@ -1247,7 +1359,7 @@
 
   <div class="input-wrap">
     <label>TL / Manager Name</label>
-    <input type="text" id="invTLName" placeholder="e.g. Ramesh K." />
+    <select id="invTLName"><option value="">Select TL / Manager…</option></select>
   </div>
 
   <div class="input-wrap">
@@ -1304,6 +1416,83 @@
 </div>
 
 
+<!-- ════════════════ REQUIREMENT REQUEST FORM (v5.5 — Module 3) ════════════════ -->
+<div class="screen" id="screen-requirement-request">
+  <div class="big-label">Inventory</div>
+  <div class="big-title">Request Stock</div>
+  <p class="sub">Need more inventory for your city? Submit a request and the Central Team will review it.</p>
+
+  <div class="inv-scope-pill" id="reqReqScope">Scope: <b>—</b></div>
+
+  <div id="reqReqError" class="error-msg"></div>
+  <div id="reqReqSuccess" class="success-msg"></div>
+
+  <!-- Tabs: New Request | My Requests -->
+  <div class="tab-strip" id="reqReqTabs">
+    <div class="tab-pill active" data-tab="new" onclick="switchReqReqTab('new')">New Request</div>
+    <div class="tab-pill" data-tab="mine" onclick="switchReqReqTab('mine')">My Requests <span class="tab-count" id="reqMineCount" style="display:none">0</span></div>
+  </div>
+
+  <!-- New Request tab -->
+  <div id="reqReqTabNew">
+    <div class="input-wrap">
+      <label>City</label>
+      <select id="reqCitySelect"></select>
+    </div>
+
+    <div class="input-wrap">
+      <label>Item</label>
+      <select id="reqItemSelect"></select>
+    </div>
+
+    <div class="input-wrap">
+      <label>Required Quantity</label>
+      <input type="number" id="reqQty" min="1" step="1" value="1" />
+    </div>
+
+    <div class="input-wrap">
+      <label>Required By Date</label>
+      <input type="date" id="reqByDate" />
+    </div>
+
+    <div class="input-wrap">
+      <label>Reason</label>
+      <textarea id="reqReason" maxlength="500" placeholder="Why is this stock needed? (e.g. upcoming campaign on 20 May, current standees damaged)"></textarea>
+    </div>
+
+    <button class="btn btn-primary" id="reqSubmitBtn" onclick="submitRequirementRequest()">Submit Request</button>
+  </div>
+
+  <!-- My Requests tab -->
+  <div id="reqReqTabMine" style="display:none">
+    <div id="reqMineLoading" class="loading" style="display:none"><div class="spinner"></div> Loading…</div>
+    <div id="reqMineList"></div>
+  </div>
+</div>
+
+
+<!-- ════════════════ REQUIREMENT REVIEW (Central Team admin queue) ════════════════ -->
+<div class="screen" id="screen-requirement-review">
+  <div class="big-label">Inventory</div>
+  <div class="big-title">Review Requests</div>
+  <p class="sub">Approve, reject, or mark requests as fulfilled. TLs and Managers see updated status instantly.</p>
+
+  <div id="reqRevError" class="error-msg"></div>
+
+  <!-- Filter tabs -->
+  <div class="req-tabs" id="reqRevTabs">
+    <div class="req-tab active" data-status="pending" onclick="switchReqRevTab('pending')">Pending <span class="count" id="reqRevCountPending">0</span></div>
+    <div class="req-tab" data-status="approved" onclick="switchReqRevTab('approved')">Approved <span class="count" id="reqRevCountApproved">0</span></div>
+    <div class="req-tab" data-status="fulfilled" onclick="switchReqRevTab('fulfilled')">Fulfilled <span class="count" id="reqRevCountFulfilled">0</span></div>
+    <div class="req-tab" data-status="rejected" onclick="switchReqRevTab('rejected')">Rejected <span class="count" id="reqRevCountRejected">0</span></div>
+    <div class="req-tab" data-status="all" onclick="switchReqRevTab('all')">All</div>
+  </div>
+
+  <div id="reqRevLoading" class="loading" style="display:none"><div class="spinner"></div> Loading requests…</div>
+  <div id="reqRevList"></div>
+</div>
+
+
 <!-- ════════════════ INVENTORY TOAST (v5.4) ════════════════ -->
 <div class="inv-toast" id="invToast"></div>
 
@@ -1322,7 +1511,7 @@ const CONFIG = {
   INCENTIVE_CONFIG_SHEET_ID: '11XgLAKpWjzSq8jZAZfqq7R83zEx-M0jH3FGga6qnWj8',
   SLOT_CHECKER_SHEET_ID:     '1PzO_a9cwBbgvAvjNhCgu8UWgecdTKH37Q-rbIQI0f6o',
   // v5.4 — Inventory module (sheets created and wired in)
-  INVENTORY_STOCK_SHEET_ID:  '1rPSW6Fgwg9ihjSk_AHCN04hlAqaYNxLTDbLY8AibXPo',
+  INVENTORY_STOCK_SHEET_ID:  '1rPSW6Fgwg9ihjSk_AHCN04hlAqaYNxLTDbLY8AibXPo',  // also holds Inventory_Stock_Audit (v5.4) and Inventory_Requirements (v5.5) tabs
   PRODUCT_CATALOG_SHEET_ID:  '1upHJLP9lI-pjvU8xEXMgCVtgP-6yDlCYYAA3EwuY40o',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
@@ -1415,6 +1604,14 @@ let state = {
   inventoryStockLoaded:     false,
   invDetailRecord:          null,   // currently shown in modal
   invEditingRecordId:       null,   // record_id we are editing on the update screen
+  // v5.4.1 — staff (TL/Manager) directory for the dropdown
+  inventoryStaff:           [],     // [{name, code, role, city}] for users with role manager|tl
+  inventoryStaffLoaded:     false,
+  // v5.5 — Requirement Requests (Module 3)
+  inventoryRequests:        [],     // [{request_id, agent_code, agent_name, city, product_id, product_name, required_qty, required_by_date, reason, status, request_date, resolved_date, resolved_by_name, remarks}]
+  inventoryRequestsLoaded:  false,
+  reqReqTab:                'new',  // 'new' | 'mine'
+  reqRevTab:                'pending', // pending | approved | fulfilled | rejected | all
 };
 
 
@@ -1649,7 +1846,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending' };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -1662,6 +1859,7 @@ document.getElementById('loginUsername').addEventListener('keydown', e => { if (
 // HOME CARDS
 // ─────────────────────────────────────────────────────────
 function renderHomeCards() {
+  const isCentralForReview = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
   const cards = [
     { icon:'🏘️', title:'Add Society',     sub:'Visit & record a society near you',  access: state.societyAccess,     action:'startAddSociety()' },
     { icon:'📲', title:'WhatsApp Blast',  sub:'Send your unique invite link',        access: state.blastAccess,       action:'startWhatsappBlast()' },
@@ -1669,6 +1867,8 @@ function renderHomeCards() {
     { icon:'📊', title:'Slot Checker',    sub:'Live jobs, experts & utilization',    access: state.slotCheckerAccess, action:'startSlotChecker()' },
     { icon:'📈', title:'Inventory Dashboard', sub:'Stock position across cities',     access: state.inventoryDashboardAccess, action:'openInventoryDashboard()' },
     { icon:'📦', title:'Inventory Update',    sub:'Update stock for your location',   access: state.inventoryUpdateAccess,    action:'openInventoryUpdate()' },
+    { icon:'📝', title:'Request More Stock',  sub:'Ask Central Team for additional inventory', access: state.inventoryUpdateAccess, action:'openRequirementRequest()' },
+    { icon:'✅', title:'Review Requests',     sub:'Approve, reject, or fulfil pending stock requests', access: state.inventoryUpdateAccess && isCentralForReview, action:'openRequirementReview()' },
   ];
   const accessible = cards.filter(c => c.access);
   const grid = document.getElementById('homeGrid');
@@ -2013,7 +2213,6 @@ async function submitMatch() {
   const flatCount = document.getElementById('existingFlatCount').value.trim();
   const notes     = document.getElementById('existingNotes').value.trim();
   const btn       = document.getElementById('submitMatchBtn');
-  if (!flatCount) { alert('Please confirm the flat count before submitting.'); return; }
   btn.disabled = true; btn.textContent = 'Checking…';
   const societyName    = state.selectedSociety.name;
   const alreadySub     = await checkIfAlreadySubmitted(societyName);
@@ -2027,13 +2226,13 @@ async function submitMatch() {
     societyName,
     latitude:       state.userLat,
     longitude:      state.userLon,
-    flatCount:      flatCount,
+    flatCount:      flatCount || 'Not updated',
     isNew,
     partOfDatabase: 'Yes',
     nanoMarket:     state.selectedSociety.liveNM || '',
     notes,
   });
-  showSocietySuccess({ societyName, flatCount: flatCount, isNew, partOfDatabase: 'Yes', nanoMarket: state.selectedSociety.liveNM || '—' });
+  showSocietySuccess({ societyName, flatCount: flatCount || 'Not updated', isNew, partOfDatabase: 'Yes', nanoMarket: state.selectedSociety.liveNM || '—' });
 }
 
 async function submitNew() {
@@ -3484,7 +3683,11 @@ async function openInventoryDashboard() {
   navigate('screen-inventory-dashboard');
 
   try {
-    await Promise.all([ loadProductCatalog(), loadInventoryStock(true) ]);
+    await Promise.all([
+      loadProductCatalog(),
+      loadInventoryStock(true),
+      loadInventoryRequests(true),  // v5.5 — for Required Quantity column
+    ]);
     renderInventoryDashboard();
   } catch (e) {
     showError('invDashError', 'Could not load inventory data. ' + (e && e.message ? e.message : ''));
@@ -3508,7 +3711,7 @@ function renderInventoryDashboard() {
   const tilesEl = document.getElementById('invDashTiles');
   tilesEl.innerHTML = `
     <div class="inv-tile">
-      <div class="inv-tile-label">Total Stock</div>
+      <div class="inv-tile-label">Total Stock Received</div>
       <div class="inv-tile-value">${totals.total}</div>
       <div class="inv-tile-sub">${scoped.length} records</div>
     </div>
@@ -3580,9 +3783,10 @@ function renderInventoryDashboard() {
           const pUse  = (r.stock_in_use     / total) * 100;
           const pDmg  = (r.stock_damaged    / total) * 100;
           const pEx   = (r.stock_with_ex_bde/ total) * 100;
+          const reqQty = _inventoryRequiredFor(r.city, r.product_id);
           return `
             <div class="inv-item-row" onclick="openInvDetail('${r.record_id}')">
-              <div class="inv-item-name">${r.product_name || r.product_id}</div>
+              <div class="inv-item-name">${r.product_name || r.product_id}${reqQty > 0 ? ' <span style="font-size:10px;font-weight:800;color:var(--accent);background:#FFF0F6;padding:1px 6px;border-radius:999px;margin-left:4px">+${reqQty} req</span>' : ''}</div>
               <div class="inv-item-bar" title="${r.stock_not_in_use}/${r.stock_in_use}/${r.stock_damaged}/${r.stock_with_ex_bde}">
                 <div class="inv-item-bar-seg inv-item-bar-good"  style="width:${pNot}%"></div>
                 <div class="inv-item-bar-seg inv-item-bar-inuse" style="width:${pUse}%"></div>
@@ -3629,12 +3833,14 @@ function openInvDetail(recordId) {
   const matchTag = sum === r.total_stock
     ? '<span style="color:#00966A">✓</span>'
     : '<span style="color:var(--error)">⚠ ' + sum + ' vs ' + r.total_stock + '</span>';
+  const requiredQty = _inventoryRequiredFor(r.city, r.product_id);
   document.getElementById('invDetailBody').innerHTML = `
-    <div class="inv-detail-row"><span class="k">Total Stock</span><span class="v">${r.total_stock}</span></div>
+    <div class="inv-detail-row"><span class="k">Total Stock Received</span><span class="v">${r.total_stock}</span></div>
     <div class="inv-detail-row"><span class="k">Not in Use</span><span class="v">${r.stock_not_in_use}</span></div>
     <div class="inv-detail-row"><span class="k">In Use</span><span class="v">${r.stock_in_use}</span></div>
     <div class="inv-detail-row"><span class="k">Damaged</span><span class="v">${r.stock_damaged}</span></div>
     <div class="inv-detail-row"><span class="k">With Ex-BDE</span><span class="v">${r.stock_with_ex_bde}</span></div>
+    <div class="inv-detail-row"><span class="k">Required Quantity</span><span class="v" style="color:${requiredQty > 0 ? 'var(--accent)' : 'var(--muted)'}">${requiredQty > 0 ? '+' + requiredQty + ' (open requests)' : '—'}</span></div>
     <div class="inv-detail-row"><span class="k">Breakdown check</span><span class="v">${matchTag}</span></div>
     <div class="inv-detail-row"><span class="k">Last updated</span><span class="v">${_invFmtDate(r.last_updated)}</span></div>
     <div class="inv-detail-row"><span class="k">Updated by</span><span class="v">${r.updated_by_name || '—'}</span></div>
@@ -3657,6 +3863,74 @@ function editFromDetail() {
 }
 
 // ─────────────────────────────────────────────────────────
+// STAFF DIRECTORY (v5.4.1) — TL/Manager dropdown source
+// Reuses the existing loadCreds() to pull users with inventoryRole = manager|tl
+// ─────────────────────────────────────────────────────────
+async function loadInventoryStaff() {
+  if (state.inventoryStaffLoaded) return;
+  try {
+    const { rows, headerIdx, nIdx, cIdx, aIdx, invRoleIdx, assignedCityIdx } = await loadCreds();
+    if (invRoleIdx < 0) {
+      // Inventory Role column not present yet — fall back to empty list; the form will
+      // accept whatever name is preselected (logged-in user) without a real dropdown.
+      state.inventoryStaff = [];
+      state.inventoryStaffLoaded = true;
+      return;
+    }
+    state.inventoryStaff = rows.slice(headerIdx + 1)
+      .filter(r => toBoolean(r[aIdx]))  // active users only
+      .map(r => ({
+        name: String(r[nIdx] || '').trim(),
+        code: String(r[cIdx] || '').trim(),
+        role: String(r[invRoleIdx] || '').trim().toLowerCase(),
+        city: assignedCityIdx >= 0 ? String(r[assignedCityIdx] || '').trim() : '',
+      }))
+      .filter(s => s.name && (s.role === 'manager' || s.role === 'tl'));
+    state.inventoryStaffLoaded = true;
+  } catch (e) {
+    // Non-fatal — just leave the list empty; form will still work with self-name.
+    state.inventoryStaff = [];
+    state.inventoryStaffLoaded = true;
+  }
+}
+
+function _populateTLDropdown(selectedCity) {
+  const sel = document.getElementById('invTLName');
+  const role = state.inventoryRole;
+  const isCentral = role === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+
+  if (!isCentral) {
+    // Locked to own name — single-option select
+    sel.innerHTML = `<option value="${state.agentName}" selected>${state.agentName}</option>`;
+    sel.disabled = true;
+    sel.value = state.agentName;
+    return;
+  }
+
+  // Central — show full list, optionally filtered by selected city
+  sel.disabled = false;
+  let staff = state.inventoryStaff.slice();
+  if (selectedCity) {
+    const filtered = staff.filter(s => !s.city || s.city.toUpperCase() === 'ALL' || s.city.toLowerCase() === selectedCity.toLowerCase());
+    if (filtered.length > 0) staff = filtered;
+    // else: no one assigned to this city yet — fall through to showing everyone
+  }
+  // Dedupe by name
+  const seen = new Set();
+  staff = staff.filter(s => { if (seen.has(s.name)) return false; seen.add(s.name); return true; });
+  staff.sort((a,b) => a.name.localeCompare(b.name));
+
+  const currentValue = sel.value;
+  sel.innerHTML = ['<option value="">Select TL / Manager…</option>']
+    .concat(staff.map(s => `<option value="${s.name}">${s.name}${s.city && s.city.toUpperCase() !== 'ALL' ? ' · ' + _invTitleCase(s.city) : ''}</option>`))
+    .join('');
+  // Restore previous selection if still valid; otherwise leave blank.
+  if (currentValue && staff.some(s => s.name === currentValue)) {
+    sel.value = currentValue;
+  }
+}
+
+// ─────────────────────────────────────────────────────────
 // UPDATE FORM (Option 2)
 // ─────────────────────────────────────────────────────────
 async function openInventoryUpdate(prefillRecordId) {
@@ -3667,7 +3941,7 @@ async function openInventoryUpdate(prefillRecordId) {
   navigate('screen-inventory-update');
 
   try {
-    await Promise.all([ loadProductCatalog(), loadInventoryStock(true) ]);
+    await Promise.all([ loadProductCatalog(), loadInventoryStock(true), loadInventoryStaff() ]);
   } catch(e) {
     showError('invUpdateError', 'Could not load supporting data. ' + (e && e.message ? e.message : ''));
     return;
@@ -3701,13 +3975,24 @@ async function openInventoryUpdate(prefillRecordId) {
   else            { totalEl.readOnly = true;  lockNote.style.display = 'block'; }
 
   // Pre-fill (if editing) or reset
+  _populateTLDropdown(citySel.value);  // initial population based on city dropdown state
   document.getElementById('invTLName').value = state.agentName || '';
   if (prefillRecordId) {
     const r = state.inventoryStock.find(x => x.record_id === prefillRecordId);
     if (r) {
       citySel.value = r.city;
       itemSel.value = r.product_id;
-      document.getElementById('invTLName').value = r.tl_manager_name || state.agentName || '';
+      _populateTLDropdown(r.city);
+      const tlSel = document.getElementById('invTLName');
+      const desired = r.tl_manager_name || state.agentName || '';
+      // If the existing TL name isn't in our dropdown (e.g. they were a TL once but reassigned),
+      // add it as an option so we don't lose the historical value.
+      if (desired && !Array.from(tlSel.options).some(o => o.value === desired)) {
+        const opt = document.createElement('option');
+        opt.value = desired; opt.textContent = desired + ' · (legacy)';
+        tlSel.appendChild(opt);
+      }
+      tlSel.value = desired;
       totalEl.value                                 = r.total_stock;
       document.getElementById('invStockNotInUse').value = r.stock_not_in_use;
       document.getElementById('invStockInUse').value    = r.stock_in_use;
@@ -3727,6 +4012,8 @@ async function openInventoryUpdate(prefillRecordId) {
 }
 
 function onInvCityChange() {
+  // Repopulate TL dropdown filtered by the newly chosen city
+  _populateTLDropdown(document.getElementById('invCitySelect').value);
   // If we have an existing record for this (city, product), pre-fill from it.
   _prefillFromExisting();
 }
@@ -3743,7 +4030,14 @@ function _prefillFromExisting() {
                 || state.inventoryStock.find(r => r.city === city && r.product_id === pid);
   if (existing) {
     state.invEditingRecordId = existing.record_id;
-    document.getElementById('invTLName').value = existing.tl_manager_name || state.agentName || '';
+    const tlSel = document.getElementById('invTLName');
+    const desired = existing.tl_manager_name || state.agentName || '';
+    if (desired && !Array.from(tlSel.options).some(o => o.value === desired)) {
+      const opt = document.createElement('option');
+      opt.value = desired; opt.textContent = desired + ' · (legacy)';
+      tlSel.appendChild(opt);
+    }
+    tlSel.value = desired;
     document.getElementById('invTotalStock').value     = existing.total_stock;
     document.getElementById('invStockNotInUse').value  = existing.stock_not_in_use;
     document.getElementById('invStockInUse').value     = existing.stock_in_use;
@@ -3862,6 +4156,429 @@ async function submitInventoryUpdate() {
     btn.disabled = false; btn.textContent = 'Save Update';
   }
 }
+
+// ═════════════════════════════════════════════════════════════
+// REQUIREMENT REQUESTS (v5.5 — Module 3)
+// ═════════════════════════════════════════════════════════════
+//
+// TODO(v5.5-backend) — Apps Script changes required:
+//
+//   1. In the Inventory Stock spreadsheet (same ID as
+//      INVENTORY_STOCK_SHEET_ID), add a third tab:
+//        Tab name: "Inventory_Requirements"
+//        Columns:
+//          A request_id | B agent_code | C agent_name | D city |
+//          E product_id | F product_name | G required_qty |
+//          H required_by_date | I reason | J status |
+//          K request_date | L resolved_date | M resolved_by_name |
+//          N remarks
+//      (The Apps Script handler auto-creates this tab with headers
+//      on first write, so the manual step is optional.)
+//
+//   2. Add two new actions to doPost(e):
+//        - submitRequirementRequest  — appends a new row, status='Pending'
+//        - updateRequirementStatus   — finds row by request_id and updates
+//                                       status + resolved_date + resolved_by_name + remarks
+//
+// Until backend is deployed, submit shows an error toast and
+// optimistic local cache lets the rest of the flow be tested.
+
+// ─────────────────────────────────────────────────────────
+// LOADER
+// ─────────────────────────────────────────────────────────
+async function loadInventoryRequests(force) {
+  if (state.inventoryRequestsLoaded && !force) return;
+  if (!CONFIG.INVENTORY_STOCK_SHEET_ID || CONFIG.INVENTORY_STOCK_SHEET_ID.startsWith('REPLACE_')) {
+    state.inventoryRequests = [];
+    state.inventoryRequestsLoaded = true;
+    return;
+  }
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.INVENTORY_STOCK_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Inventory_Requirements`;
+  try {
+    const res = await fetch(url);
+    const text = await res.text();
+    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+      // Tab doesn't exist yet — treat as empty until first write creates it.
+      state.inventoryRequests = [];
+      state.inventoryRequestsLoaded = true;
+      return;
+    }
+    const rows = parseCSV(text);
+    const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('request_id') || String(c).toLowerCase().includes('request id')));
+    if (headerIdx === -1) {
+      state.inventoryRequests = [];
+      state.inventoryRequestsLoaded = true;
+      return;
+    }
+    const h = rows[headerIdx].map(c => String(c).toLowerCase().replace(/\s+/g, '_').trim());
+    const col = name => h.findIndex(c => c === name);
+    const idx = {
+      request_id:       col('request_id'),
+      agent_code:       col('agent_code'),
+      agent_name:       col('agent_name'),
+      city:             col('city'),
+      product_id:       col('product_id'),
+      product_name:     col('product_name'),
+      required_qty:     col('required_qty'),
+      required_by_date: col('required_by_date'),
+      reason:           col('reason'),
+      status:           col('status'),
+      request_date:     col('request_date'),
+      resolved_date:    col('resolved_date'),
+      resolved_by_name: col('resolved_by_name'),
+      remarks:          col('remarks'),
+    };
+    const num = v => parseInt(String(v || '0').replace(/[^0-9-]/g,''), 10) || 0;
+    state.inventoryRequests = rows.slice(headerIdx + 1)
+      .filter(r => r[idx.request_id] && String(r[idx.request_id]).trim())
+      .map(r => ({
+        request_id:       String(r[idx.request_id] || '').trim(),
+        agent_code:       String(r[idx.agent_code] || '').trim(),
+        agent_name:       String(r[idx.agent_name] || '').trim(),
+        city:             String(r[idx.city] || '').trim(),
+        product_id:       String(r[idx.product_id] || '').trim(),
+        product_name:     String(r[idx.product_name] || '').trim(),
+        required_qty:     num(r[idx.required_qty]),
+        required_by_date: String(r[idx.required_by_date] || '').trim(),
+        reason:           String(r[idx.reason] || '').trim(),
+        status:           String(r[idx.status] || 'Pending').trim(),
+        request_date:     String(r[idx.request_date] || '').trim(),
+        resolved_date:    String(r[idx.resolved_date] || '').trim(),
+        resolved_by_name: String(r[idx.resolved_by_name] || '').trim(),
+        remarks:          String(r[idx.remarks] || '').trim(),
+      }));
+    state.inventoryRequestsLoaded = true;
+  } catch(e) {
+    state.inventoryRequests = [];
+    state.inventoryRequestsLoaded = true;
+  }
+}
+
+// Sums open (Pending + Approved) request quantities for a (city, product_id) pair.
+// Used by the Dashboard's "Required Quantity" column.
+function _inventoryRequiredFor(city, productId) {
+  if (!state.inventoryRequests || state.inventoryRequests.length === 0) return 0;
+  return state.inventoryRequests
+    .filter(r => r.city === city && r.product_id === productId)
+    .filter(r => r.status === 'Pending' || r.status === 'Approved')
+    .reduce((sum, r) => sum + (r.required_qty || 0), 0);
+}
+
+// ─────────────────────────────────────────────────────────
+// REQUEST FORM (TLs/Managers/Central submit)
+// ─────────────────────────────────────────────────────────
+async function openRequirementRequest() {
+  hideMsg('reqReqError');
+  hideMsg('reqReqSuccess');
+  state.reqReqTab = 'new';
+  document.getElementById('reqReqScope').innerHTML = 'Scope: <b>' + _invScopeLabel() + '</b>';
+  navigate('screen-requirement-request');
+
+  // Show "new" tab by default
+  switchReqReqTab('new');
+
+  // Load supporting data
+  try {
+    await Promise.all([
+      loadProductCatalog(),
+      loadInventoryStock(true),     // refresh — need cities + records
+      loadInventoryRequests(true),  // refresh "my requests"
+    ]);
+  } catch(e) {
+    showError('reqReqError', 'Could not load supporting data. ' + (e && e.message ? e.message : ''));
+    return;
+  }
+
+  // City dropdown — same logic as Inventory Update
+  const role = state.inventoryRole;
+  const isCentral = role === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  const citySel = document.getElementById('reqCitySelect');
+  const allCities = Array.from(new Set(state.inventoryStock.map(r => r.city).filter(Boolean))).sort();
+  if (isCentral) {
+    citySel.disabled = false;
+    citySel.innerHTML = ['<option value="">Select city…</option>']
+      .concat(allCities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`)).join('');
+  } else {
+    citySel.disabled = true;
+    const c = state.assignedCity || '';
+    citySel.innerHTML = `<option value="${c}">${_invTitleCase(c)}</option>`;
+    citySel.value = c;
+  }
+
+  // Item dropdown
+  const itemSel = document.getElementById('reqItemSelect');
+  itemSel.innerHTML = ['<option value="">Select item…</option>']
+    .concat(state.productCatalog.map(p => `<option value="${p.product_id}">${p.product_name}</option>`)).join('');
+
+  // Default required-by date = today + 14 days
+  const d = new Date(); d.setDate(d.getDate() + 14);
+  document.getElementById('reqByDate').value = d.toISOString().slice(0, 10);
+  document.getElementById('reqByDate').min = new Date().toISOString().slice(0, 10);
+
+  // Reset other fields
+  document.getElementById('reqQty').value = 1;
+  document.getElementById('reqReason').value = '';
+
+  // Update My Requests count badge
+  _renderMyRequestsCount();
+}
+
+function switchReqReqTab(tab) {
+  state.reqReqTab = tab;
+  document.querySelectorAll('#reqReqTabs .tab-pill').forEach(el => {
+    el.classList.toggle('active', el.dataset.tab === tab);
+  });
+  document.getElementById('reqReqTabNew').style.display  = tab === 'new'  ? 'block' : 'none';
+  document.getElementById('reqReqTabMine').style.display = tab === 'mine' ? 'block' : 'none';
+  if (tab === 'mine') renderMyRequests();
+}
+
+function _renderMyRequestsCount() {
+  const mine = state.inventoryRequests.filter(r => r.agent_code === state.agentCode);
+  const open = mine.filter(r => r.status === 'Pending' || r.status === 'Approved').length;
+  const el = document.getElementById('reqMineCount');
+  if (open > 0) { el.textContent = open; el.style.display = 'inline-block'; }
+  else { el.style.display = 'none'; }
+}
+
+function renderMyRequests() {
+  const listEl = document.getElementById('reqMineList');
+  const mine = state.inventoryRequests
+    .filter(r => r.agent_code === state.agentCode)
+    .sort((a,b) => (b.request_date || '').localeCompare(a.request_date || ''));
+
+  if (mine.length === 0) {
+    listEl.innerHTML = `<div class="lb-empty">No requests yet. Use the "New Request" tab to submit one.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = mine.map(r => `
+    <div class="req-card">
+      <div class="req-card-h">
+        <div>
+          <div class="req-card-title">${r.product_name}</div>
+          <div class="req-card-meta">${_invTitleCase(r.city)} · ${_invFmtDate(r.request_date)}</div>
+        </div>
+        <span class="req-status req-status-${r.status.toLowerCase()}">${r.status}</span>
+      </div>
+      <div class="req-card-body">
+        Requested: <span class="qty">${r.required_qty}</span> ·
+        Need by: ${r.required_by_date || '—'}
+        ${r.reason ? '<br><span style="color:var(--muted)">' + r.reason + '</span>' : ''}
+        ${r.resolved_by_name ? '<br><span style="color:var(--muted);font-size:11px">' + r.status + ' by ' + r.resolved_by_name + (r.resolved_date ? ' on ' + _invFmtDate(r.resolved_date) : '') + (r.remarks ? ' — ' + r.remarks : '') + '</span>' : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function submitRequirementRequest() {
+  hideMsg('reqReqError');
+  hideMsg('reqReqSuccess');
+
+  const city  = document.getElementById('reqCitySelect').value.trim();
+  const pid   = document.getElementById('reqItemSelect').value.trim();
+  const pname = (state.productCatalog.find(p => p.product_id === pid) || {}).product_name || '';
+  const qty   = parseInt(document.getElementById('reqQty').value || '0', 10);
+  const byDate = document.getElementById('reqByDate').value;
+  const reason = document.getElementById('reqReason').value.trim();
+
+  if (!city || !pid)              { showError('reqReqError', 'Please pick a city and an item.'); return; }
+  if (!qty || qty < 1)            { showError('reqReqError', 'Required quantity must be at least 1.'); return; }
+  if (!byDate)                    { showError('reqReqError', 'Please pick a required-by date.'); return; }
+  if (!reason || reason.length < 5) { showError('reqReqError', 'Please give a brief reason (at least 5 characters).'); return; }
+
+  // Permission check
+  const isCentral = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  if (!isCentral && state.assignedCity && city.toLowerCase() !== state.assignedCity.toLowerCase()) {
+    showError('reqReqError', "You can only raise requests for your assigned city.");
+    return;
+  }
+
+  // Generate request_id: REQ-{timestamp}-{random4}
+  const requestId = 'REQ-' + Date.now() + '-' + Math.floor(Math.random() * 9000 + 1000);
+  const now = new Date().toISOString();
+
+  const payload = {
+    action:           'submitRequirementRequest',
+    request_id:       requestId,
+    agent_code:       state.agentCode,
+    agent_name:       state.agentName,
+    city:             city,
+    product_id:       pid,
+    product_name:     pname,
+    required_qty:     qty,
+    required_by_date: byDate,
+    reason:           reason,
+    request_date:     now,
+    status:           'Pending',
+  };
+
+  const btn = document.getElementById('reqSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+
+  try {
+    if (CONFIG.INVENTORY_STOCK_SHEET_ID && !CONFIG.INVENTORY_STOCK_SHEET_ID.startsWith('REPLACE_')) {
+      await postToScript(payload);
+    } else {
+      _invToast('Demo mode — backend not wired. Saved locally only.', 'error');
+    }
+
+    // Optimistically cache
+    state.inventoryRequests.push({
+      request_id: requestId, agent_code: state.agentCode, agent_name: state.agentName,
+      city, product_id: pid, product_name: pname, required_qty: qty,
+      required_by_date: byDate, reason, status: 'Pending', request_date: now,
+      resolved_date: '', resolved_by_name: '', remarks: '',
+    });
+
+    _invToast('Request submitted', 'success');
+    const successEl = document.getElementById('reqReqSuccess');
+    successEl.textContent = 'Request submitted! Central Team will review it. Check the "My Requests" tab to see status.';
+    successEl.style.display = 'block';
+    // Reset form
+    document.getElementById('reqQty').value = 1;
+    document.getElementById('reqReason').value = '';
+    _renderMyRequestsCount();
+
+    btn.textContent = 'Submitted ✓';
+    setTimeout(() => { btn.textContent = 'Submit Request'; btn.disabled = false; }, 1500);
+  } catch (e) {
+    showError('reqReqError', 'Could not submit. Please check your connection and try again.');
+    btn.disabled = false; btn.textContent = 'Submit Request';
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// ADMIN REVIEW QUEUE (Central Team only)
+// ─────────────────────────────────────────────────────────
+async function openRequirementReview() {
+  hideMsg('reqRevError');
+  state.reqRevTab = 'pending';
+  navigate('screen-requirement-review');
+  document.getElementById('reqRevLoading').style.display = 'flex';
+  document.getElementById('reqRevList').innerHTML = '';
+
+  try {
+    await loadInventoryRequests(true);
+  } catch(e) {
+    showError('reqRevError', 'Could not load requests.');
+    document.getElementById('reqRevLoading').style.display = 'none';
+    return;
+  }
+  document.getElementById('reqRevLoading').style.display = 'none';
+  _renderReqRevCounts();
+  switchReqRevTab('pending');
+}
+
+function _renderReqRevCounts() {
+  const all = state.inventoryRequests;
+  const count = (s) => all.filter(r => r.status === s).length;
+  document.getElementById('reqRevCountPending').textContent   = count('Pending');
+  document.getElementById('reqRevCountApproved').textContent  = count('Approved');
+  document.getElementById('reqRevCountFulfilled').textContent = count('Fulfilled');
+  document.getElementById('reqRevCountRejected').textContent  = count('Rejected');
+}
+
+function switchReqRevTab(status) {
+  state.reqRevTab = status;
+  document.querySelectorAll('#reqRevTabs .req-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.status === status);
+  });
+  renderReqRev();
+}
+
+function renderReqRev() {
+  const listEl = document.getElementById('reqRevList');
+  const tab = state.reqRevTab;
+  let rows = state.inventoryRequests.slice();
+  if (tab !== 'all') {
+    const statusMap = { pending:'Pending', approved:'Approved', fulfilled:'Fulfilled', rejected:'Rejected' };
+    rows = rows.filter(r => r.status === statusMap[tab]);
+  }
+  rows.sort((a,b) => (b.request_date || '').localeCompare(a.request_date || ''));
+
+  if (rows.length === 0) {
+    listEl.innerHTML = `<div class="lb-empty">No requests ${tab === 'all' ? 'yet' : 'in ' + tab + ' status'}.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = rows.map(r => {
+    const isPending   = r.status === 'Pending';
+    const isApproved  = r.status === 'Approved';
+    return `
+      <div class="req-card">
+        <div class="req-card-h">
+          <div>
+            <div class="req-card-title">${r.product_name}</div>
+            <div class="req-card-meta">${_invTitleCase(r.city)} · ${r.agent_name} · ${_invFmtDate(r.request_date)}</div>
+          </div>
+          <span class="req-status req-status-${r.status.toLowerCase()}">${r.status}</span>
+        </div>
+        <div class="req-card-body">
+          Requested: <span class="qty">${r.required_qty}</span> · Need by: ${r.required_by_date || '—'}
+          ${r.reason ? '<br><i style="color:var(--muted)">"' + r.reason + '"</i>' : ''}
+          ${r.resolved_by_name ? '<br><span style="color:var(--muted);font-size:11px">' + r.status + ' by ' + r.resolved_by_name + (r.resolved_date ? ' on ' + _invFmtDate(r.resolved_date) : '') + (r.remarks ? ' — ' + r.remarks : '') + '</span>' : ''}
+        </div>
+        ${(isPending || isApproved) ? `
+          <div class="req-card-actions">
+            ${isPending  ? `<button class="req-action-btn approve" onclick="actOnRequest('${r.request_id}', 'Approved')">✓ Approve</button>` : ''}
+            ${isApproved ? `<button class="req-action-btn fulfil" onclick="actOnRequest('${r.request_id}', 'Fulfilled')">📦 Mark Fulfilled</button>` : ''}
+            <button class="req-action-btn reject" onclick="actOnRequest('${r.request_id}', 'Rejected')">✕ Reject</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+async function actOnRequest(requestId, newStatus) {
+  // Optional remark
+  let remarks = '';
+  if (newStatus === 'Rejected') {
+    remarks = prompt('Reason for rejection (optional, will be visible to requester):') || '';
+  } else if (newStatus === 'Fulfilled') {
+    remarks = prompt('Any note about fulfilment? (optional)') || '';
+  }
+
+  const now = new Date().toISOString();
+  const payload = {
+    action:           'updateRequirementStatus',
+    request_id:       requestId,
+    status:           newStatus,
+    resolved_date:    now,
+    resolved_by_code: state.agentCode,
+    resolved_by_name: state.agentName,
+    remarks:          remarks,
+  };
+
+  try {
+    if (CONFIG.INVENTORY_STOCK_SHEET_ID && !CONFIG.INVENTORY_STOCK_SHEET_ID.startsWith('REPLACE_')) {
+      await postToScript(payload);
+    } else {
+      _invToast('Demo mode — backend not wired. Updated locally only.', 'error');
+    }
+
+    // Update local cache
+    const r = state.inventoryRequests.find(x => x.request_id === requestId);
+    if (r) {
+      r.status = newStatus;
+      r.resolved_date = now;
+      r.resolved_by_name = state.agentName;
+      r.remarks = remarks;
+    }
+
+    _invToast(`Marked as ${newStatus}`, 'success');
+    _renderReqRevCounts();
+    renderReqRev();
+  } catch(e) {
+    _invToast('Could not update. Please retry.', 'error');
+  }
+}
+
+// ═════════════════════════════════════════════════════════════
+// END REQUIREMENT REQUESTS
+// ═════════════════════════════════════════════════════════════
+
 // ═════════════════════════════════════════════════════════════
 // END INVENTORY MODULE
 // ═════════════════════════════════════════════════════════════
