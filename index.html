@@ -663,6 +663,21 @@
   }
   .inv-scope-pill b { color: var(--accent); }
 
+  /* v5.6 — Dashboard filter row */
+  .inv-dash-filters {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;
+  }
+  .inv-dash-filter label {
+    display: block; font-size: 10px; font-weight: 700; color: var(--muted);
+    letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px;
+  }
+  .inv-dash-filter select {
+    width: 100%; padding: 10px 12px; border-radius: 10px;
+    border: 1.5px solid var(--border); background: var(--surface);
+    font-size: 14px; font-weight: 600; color: var(--navy);
+  }
+  .inv-dash-filter select:focus { outline: none; border-color: var(--accent); }
+
   /* KPI tiles 2x2 */
   .inv-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
   .inv-tile {
@@ -1315,6 +1330,22 @@
   <div id="invDashLoading" class="loading" style="display:none"><div class="spinner"></div> Loading inventory…</div>
 
   <div id="invDashContent" style="display:none">
+    <!-- v5.6 — Filters -->
+    <div class="inv-dash-filters">
+      <div class="inv-dash-filter">
+        <label>City</label>
+        <select id="invDashFilterCity" onchange="renderInventoryDashboard()">
+          <option value="">All cities</option>
+        </select>
+      </div>
+      <div class="inv-dash-filter">
+        <label>Item</label>
+        <select id="invDashFilterItem" onchange="renderInventoryDashboard()">
+          <option value="">All items</option>
+        </select>
+      </div>
+    </div>
+
     <!-- KPI tiles -->
     <div class="inv-tiles" id="invDashTiles"></div>
 
@@ -1373,7 +1404,7 @@
     <div class="field-lock-note" id="invTotalStockLockNote" style="display:none">🔒 Only Central Team can update Total Stock. Contact Central Team if a correction is needed.</div>
   </div>
 
-  <div class="inv-num-row">
+  <div class="inv-num-row" id="invNumRow">
     <div class="input-wrap">
       <label>Not in Use</label>
       <input type="number" id="invStockNotInUse" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
@@ -1386,7 +1417,8 @@
       <label>Damaged</label>
       <input type="number" id="invStockDamaged" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
     </div>
-    <div class="input-wrap">
+    <!-- v5.6 — With Ex-BDE only relevant for T-shirts (apparel that travels with ex-employees). Hidden by default; shown by onInvItemChange() when a T-shirt product is selected. -->
+    <div class="input-wrap" id="invStockExBDEWrap" style="display:none">
       <label>With Ex-BDE</label>
       <input type="number" id="invStockExBDE" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
     </div>
@@ -1427,13 +1459,14 @@
   <div id="reqReqError" class="error-msg"></div>
   <div id="reqReqSuccess" class="success-msg"></div>
 
-  <!-- Tabs: New Request | My Requests -->
+  <!-- Tabs: Requirements | Repair Request | My Requests -->
   <div class="tab-strip" id="reqReqTabs">
-    <div class="tab-pill active" data-tab="new" onclick="switchReqReqTab('new')">New Request</div>
+    <div class="tab-pill active" data-tab="new" onclick="switchReqReqTab('new')">Requirements</div>
+    <div class="tab-pill" data-tab="repair" onclick="switchReqReqTab('repair')">Repair Request</div>
     <div class="tab-pill" data-tab="mine" onclick="switchReqReqTab('mine')">My Requests <span class="tab-count" id="reqMineCount" style="display:none">0</span></div>
   </div>
 
-  <!-- New Request tab -->
+  <!-- Requirements tab (new stock) -->
   <div id="reqReqTabNew">
     <div class="input-wrap">
       <label>City</label>
@@ -1461,6 +1494,55 @@
     </div>
 
     <button class="btn btn-primary" id="reqSubmitBtn" onclick="submitRequirementRequest()">Submit Request</button>
+  </div>
+
+  <!-- Repair Request tab (v5.6) -->
+  <div id="reqReqTabRepair" style="display:none">
+    <div class="input-wrap">
+      <label>City</label>
+      <select id="repCitySelect"></select>
+    </div>
+
+    <div class="input-wrap">
+      <label>Item</label>
+      <select id="repItemSelect"></select>
+    </div>
+
+    <div class="input-wrap">
+      <label>Quantity to Repair</label>
+      <input type="number" id="repQty" min="1" step="1" value="1" />
+    </div>
+
+    <div class="input-wrap">
+      <label>Damage Type</label>
+      <select id="repDamageType">
+        <option value="">Select damage type…</option>
+        <option value="Torn">Torn / Ripped</option>
+        <option value="Broken">Broken</option>
+        <option value="Bent">Bent / Deformed</option>
+        <option value="Faded">Faded / Discoloured</option>
+        <option value="Missing parts">Missing parts</option>
+        <option value="Electrical">Electrical fault</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+
+    <div class="input-wrap">
+      <label>Description</label>
+      <textarea id="repDescription" maxlength="500" placeholder="Describe the damage. (e.g. 2 standee poles bent at base; gazebo frame cracked at joint)"></textarea>
+    </div>
+
+    <div class="input-wrap">
+      <label>Photo (optional)</label>
+      <input type="file" id="repPhotoInput" accept="image/*" capture="environment" onchange="onRepairPhotoChange(event)" />
+      <div id="repPhotoPreviewWrap" style="display:none;margin-top:8px">
+        <img id="repPhotoPreview" style="max-width:100%;max-height:200px;border-radius:10px;border:1.5px solid var(--border)" />
+        <div class="field-lock-note" id="repPhotoInfo" style="margin-top:4px"></div>
+        <button type="button" class="btn btn-secondary" onclick="clearRepairPhoto()" style="margin-top:6px;padding:6px 10px;font-size:12px">✕ Remove photo</button>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="repSubmitBtn" onclick="submitRepairRequest()">Submit Repair Request</button>
   </div>
 
   <!-- My Requests tab -->
@@ -1610,8 +1692,12 @@ let state = {
   // v5.5 — Requirement Requests (Module 3)
   inventoryRequests:        [],     // [{request_id, agent_code, agent_name, city, product_id, product_name, required_qty, required_by_date, reason, status, request_date, resolved_date, resolved_by_name, remarks}]
   inventoryRequestsLoaded:  false,
-  reqReqTab:                'new',  // 'new' | 'mine'
+  reqReqTab:                'new',  // 'new' | 'repair' | 'mine'
   reqRevTab:                'pending', // pending | approved | fulfilled | rejected | all
+  // v5.6 — Repair Requests (Module 3b)
+  inventoryRepairs:         [],     // [{repair_id, agent_code, agent_name, city, product_id, product_name, qty, damage_type, description, photo_url, status, request_date, resolved_date, resolved_by_name}]
+  inventoryRepairsLoaded:   false,
+  repairPhotoData:          null,   // {base64, mime, filename, size} while attached to the form (cleared on submit/cancel)
 };
 
 
@@ -1846,7 +1932,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending' };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -3686,8 +3772,10 @@ async function openInventoryDashboard() {
     await Promise.all([
       loadProductCatalog(),
       loadInventoryStock(true),
+      loadInventoryStaff(),         // v5.6 — needed to populate filter even when stock is empty
       loadInventoryRequests(true),  // v5.5 — for Required Quantity column
     ]);
+    _populateDashFilters();         // v5.6 — fill the two filter dropdowns
     renderInventoryDashboard();
   } catch (e) {
     showError('invDashError', 'Could not load inventory data. ' + (e && e.message ? e.message : ''));
@@ -3696,8 +3784,72 @@ async function openInventoryDashboard() {
   }
 }
 
-function renderInventoryDashboard() {
+// v5.6 — populate the City and Item filter dropdowns on the dashboard.
+// City list is drawn from the scoped stock + staff cities; for non-central
+// users the City filter is locked to their assigned city.
+function _populateDashFilters() {
   const scoped = state.inventoryStock.filter(_invInScope);
+  const cityEl = document.getElementById('invDashFilterCity');
+  const itemEl = document.getElementById('invDashFilterItem');
+  if (!cityEl || !itemEl) return;
+
+  const isCentral = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+
+  // ── Cities
+  // Use the same source the form dropdowns use, but only show ones in scope.
+  let cities = _invAllCities();
+  if (!isCentral && state.assignedCity) {
+    cities = cities.filter(c => c.toLowerCase() === state.assignedCity.toLowerCase());
+  }
+  const prevCity = cityEl.value;
+  cityEl.innerHTML = '<option value="">All cities</option>' +
+    cities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`).join('');
+  if (prevCity && cities.includes(prevCity)) cityEl.value = prevCity;
+  // Non-central users see only their city — disable to avoid confusion.
+  if (!isCentral && cities.length === 1) {
+    cityEl.value = cities[0];
+    cityEl.disabled = true;
+  } else {
+    cityEl.disabled = false;
+  }
+
+  // ── Items
+  // Source: distinct products that appear in scoped stock, plus the full
+  // product catalog so filters work even on a fresh sheet.
+  const itemMap = new Map();  // product_id → product_name
+  scoped.forEach(r => {
+    if (r.product_id && !itemMap.has(r.product_id)) {
+      itemMap.set(r.product_id, r.product_name || r.product_id);
+    }
+  });
+  state.productCatalog.forEach(p => {
+    if (p.product_id && !itemMap.has(p.product_id)) {
+      itemMap.set(p.product_id, p.product_name || p.product_id);
+    }
+  });
+  const items = Array.from(itemMap.entries())
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const prevItem = itemEl.value;
+  itemEl.innerHTML = '<option value="">All items</option>' +
+    items.map(it => `<option value="${it.id}">${it.name}</option>`).join('');
+  if (prevItem && items.some(it => it.id === prevItem)) itemEl.value = prevItem;
+}
+
+function renderInventoryDashboard() {
+  // KPI tiles, Alerts, and Recent Updates always use the FULL scoped set so
+  // users get a holistic view even when they narrow the matrix.
+  const scoped = state.inventoryStock.filter(_invInScope);
+
+  // v5.6 — City + Item filters apply ONLY to the "Stock by City" matrix below.
+  // Empty value = no filter on that dimension.
+  const filterCity = (document.getElementById('invDashFilterCity') || {}).value || '';
+  const filterItem = (document.getElementById('invDashFilterItem') || {}).value || '';
+  const matrixRows = scoped.filter(r => {
+    if (filterCity && String(r.city || '').toLowerCase() !== filterCity.toLowerCase()) return false;
+    if (filterItem && String(r.product_id || '') !== filterItem) return false;
+    return true;
+  });
   document.getElementById('invDashContent').style.display = 'block';
 
   // ── KPI tiles
@@ -3759,9 +3911,9 @@ function renderInventoryDashboard() {
     `).join('');
   }
 
-  // ── City × Item matrix
+  // ── City × Item matrix (uses filtered set so user filters apply here)
   const byCity = {};
-  scoped.forEach(r => {
+  matrixRows.forEach(r => {
     if (!byCity[r.city]) byCity[r.city] = { city: r.city, tl: r.tl_manager_name, items: [], total: 0 };
     byCity[r.city].items.push(r);
     byCity[r.city].total += r.total_stock;
@@ -3769,7 +3921,8 @@ function renderInventoryDashboard() {
   const cities = Object.values(byCity).sort((a,b) => a.city.localeCompare(b.city));
   const matrixEl = document.getElementById('invDashMatrix');
   if (cities.length === 0) {
-    matrixEl.innerHTML = `<div class="lb-empty">No inventory records in your scope yet.</div>`;
+    const anyFilter = filterCity || filterItem;
+    matrixEl.innerHTML = `<div class="lb-empty">${anyFilter ? 'No records match the current filters.' : 'No inventory records in your scope yet.'}</div>`;
   } else {
     matrixEl.innerHTML = cities.map(c => `
       <div class="inv-city-card">
@@ -3930,6 +4083,30 @@ function _populateTLDropdown(selectedCity) {
   }
 }
 
+// v5.6 — Build the city list from multiple sources so the dropdown is never
+// empty just because Inventory_Stock has no rows yet. Sources, in priority:
+//   1. Cities already present in Inventory_Stock (real data)
+//   2. Cities assigned to TL/Managers in the Credentials sheet
+//   3. A hardcoded fallback list of metros (last resort, only if both above empty)
+// Returns a sorted, deduplicated array of city names (case preserved from first occurrence).
+function _invAllCities() {
+  const map = new Map();  // lowercase key → original casing
+  state.inventoryStock.forEach(r => {
+    const c = String(r.city || '').trim();
+    if (c && !map.has(c.toLowerCase())) map.set(c.toLowerCase(), c);
+  });
+  state.inventoryStaff.forEach(s => {
+    const c = String(s.city || '').trim();
+    if (c && c.toUpperCase() !== 'ALL' && !map.has(c.toLowerCase())) map.set(c.toLowerCase(), c);
+  });
+  if (map.size === 0) {
+    // Last-resort fallback so the form is at least usable on a fresh install.
+    ['Bengaluru', 'Mumbai', 'Pune', 'Delhi', 'Hyderabad', 'Chennai', 'Kolkata', 'Gurugram', 'Noida']
+      .forEach(c => map.set(c.toLowerCase(), c));
+  }
+  return Array.from(map.values()).sort((a,b) => a.localeCompare(b));
+}
+
 // ─────────────────────────────────────────────────────────
 // UPDATE FORM (Option 2)
 // ─────────────────────────────────────────────────────────
@@ -3951,7 +4128,7 @@ async function openInventoryUpdate(prefillRecordId) {
   const role = state.inventoryRole;
   const isCentral = role === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
   const citySel = document.getElementById('invCitySelect');
-  const allCities = Array.from(new Set(state.inventoryStock.map(r => r.city).filter(Boolean))).sort();
+  const allCities = _invAllCities();  // v5.6 — never empty
   if (isCentral) {
     citySel.disabled = false;
     citySel.innerHTML = ['<option value="">Select city…</option>']
@@ -4008,6 +4185,7 @@ async function openInventoryUpdate(prefillRecordId) {
     document.getElementById('invStockExBDE').value    = 0;
     document.getElementById('invRemarks').value       = '';
   }
+  _toggleExBdeField();  // v5.6 — set Ex-BDE field visibility based on current item
   recomputeInvMatch();
 }
 
@@ -4018,7 +4196,28 @@ function onInvCityChange() {
   _prefillFromExisting();
 }
 function onInvItemChange() {
+  _toggleExBdeField();   // v5.6 — show "With Ex-BDE" only for T-shirts
   _prefillFromExisting();
+}
+
+// v5.6 — Show the "With Ex-BDE" stock breakdown field only when a T-shirt
+// product is selected. For all other products the field is hidden AND its
+// value is reset to 0 so it can't silently break the breakdown sum.
+function _toggleExBdeField() {
+  const pid = document.getElementById('invItemSelect').value;
+  const product = state.productCatalog.find(p => p.product_id === pid);
+  const name = String((product && product.product_name) || '').toLowerCase();
+  // Match common T-shirt spellings: "T-shirt", "Tshirt", "T shirt", "Tee".
+  const isTshirt = /\bt[- ]?shirt\b|\btshirt\b|\btee\b/i.test(name);
+  const wrap = document.getElementById('invStockExBDEWrap');
+  const input = document.getElementById('invStockExBDE');
+  if (isTshirt) {
+    wrap.style.display = '';
+  } else {
+    wrap.style.display = 'none';
+    if (input) input.value = 0;
+  }
+  recomputeInvMatch();
 }
 function _prefillFromExisting() {
   const city = document.getElementById('invCitySelect').value;
@@ -4282,7 +4481,9 @@ async function openRequirementRequest() {
     await Promise.all([
       loadProductCatalog(),
       loadInventoryStock(true),     // refresh — need cities + records
+      loadInventoryStaff(),         // v5.6 — for city dropdown via _invAllCities()
       loadInventoryRequests(true),  // refresh "my requests"
+      loadInventoryRepairs(true),   // v5.6 — repair requests for the merged "My Requests" list
     ]);
   } catch(e) {
     showError('reqReqError', 'Could not load supporting data. ' + (e && e.message ? e.message : ''));
@@ -4293,7 +4494,7 @@ async function openRequirementRequest() {
   const role = state.inventoryRole;
   const isCentral = role === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
   const citySel = document.getElementById('reqCitySelect');
-  const allCities = Array.from(new Set(state.inventoryStock.map(r => r.city).filter(Boolean))).sort();
+  const allCities = _invAllCities();  // v5.6 — never empty
   if (isCentral) {
     citySel.disabled = false;
     citySel.innerHTML = ['<option value="">Select city…</option>']
@@ -4310,6 +4511,22 @@ async function openRequirementRequest() {
   itemSel.innerHTML = ['<option value="">Select item…</option>']
     .concat(state.productCatalog.map(p => `<option value="${p.product_id}">${p.product_name}</option>`)).join('');
 
+  // v5.6 — Repair tab dropdowns: same city/item logic as the Requirements tab.
+  const repCitySel = document.getElementById('repCitySelect');
+  if (isCentral) {
+    repCitySel.disabled = false;
+    repCitySel.innerHTML = ['<option value="">Select city…</option>']
+      .concat(allCities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`)).join('');
+  } else {
+    repCitySel.disabled = true;
+    const c = state.assignedCity || '';
+    repCitySel.innerHTML = `<option value="${c}">${_invTitleCase(c)}</option>`;
+    repCitySel.value = c;
+  }
+  const repItemSel = document.getElementById('repItemSelect');
+  repItemSel.innerHTML = ['<option value="">Select item…</option>']
+    .concat(state.productCatalog.map(p => `<option value="${p.product_id}">${p.product_name}</option>`)).join('');
+
   // Default required-by date = today + 14 days
   const d = new Date(); d.setDate(d.getDate() + 14);
   document.getElementById('reqByDate').value = d.toISOString().slice(0, 10);
@@ -4318,6 +4535,12 @@ async function openRequirementRequest() {
   // Reset other fields
   document.getElementById('reqQty').value = 1;
   document.getElementById('reqReason').value = '';
+
+  // v5.6 — Reset repair form fields
+  document.getElementById('repQty').value = 1;
+  document.getElementById('repDamageType').value = '';
+  document.getElementById('repDescription').value = '';
+  clearRepairPhoto();
 
   // Update My Requests count badge
   _renderMyRequestsCount();
@@ -4328,14 +4551,19 @@ function switchReqReqTab(tab) {
   document.querySelectorAll('#reqReqTabs .tab-pill').forEach(el => {
     el.classList.toggle('active', el.dataset.tab === tab);
   });
-  document.getElementById('reqReqTabNew').style.display  = tab === 'new'  ? 'block' : 'none';
-  document.getElementById('reqReqTabMine').style.display = tab === 'mine' ? 'block' : 'none';
+  document.getElementById('reqReqTabNew').style.display    = tab === 'new'    ? 'block' : 'none';
+  document.getElementById('reqReqTabRepair').style.display = tab === 'repair' ? 'block' : 'none';
+  document.getElementById('reqReqTabMine').style.display   = tab === 'mine'   ? 'block' : 'none';
   if (tab === 'mine') renderMyRequests();
 }
 
 function _renderMyRequestsCount() {
-  const mine = state.inventoryRequests.filter(r => r.agent_code === state.agentCode);
-  const open = mine.filter(r => r.status === 'Pending' || r.status === 'Approved').length;
+  // v5.6 — combined badge for open stock requirements + open repair requests
+  const mineReq = state.inventoryRequests.filter(r => r.agent_code === state.agentCode);
+  const mineRep = state.inventoryRepairs.filter(r => r.agent_code === state.agentCode);
+  const openReq = mineReq.filter(r => r.status === 'Pending' || r.status === 'Approved').length;
+  const openRep = mineRep.filter(r => r.status === 'Pending' || r.status === 'Approved').length;
+  const open = openReq + openRep;
   const el = document.getElementById('reqMineCount');
   if (open > 0) { el.textContent = open; el.style.display = 'inline-block'; }
   else { el.style.display = 'none'; }
@@ -4343,32 +4571,269 @@ function _renderMyRequestsCount() {
 
 function renderMyRequests() {
   const listEl = document.getElementById('reqMineList');
-  const mine = state.inventoryRequests
+
+  // v5.6 — Merge requirement requests and repair requests into one
+  // unified list, sorted by request_date (newest first). Each item carries
+  // a `kind` field so the card renderer knows which template to use.
+  const reqs = state.inventoryRequests
     .filter(r => r.agent_code === state.agentCode)
-    .sort((a,b) => (b.request_date || '').localeCompare(a.request_date || ''));
+    .map(r => Object.assign({ kind: 'requirement' }, r));
+  const reps = state.inventoryRepairs
+    .filter(r => r.agent_code === state.agentCode)
+    .map(r => Object.assign({ kind: 'repair' }, r));
+  const mine = reqs.concat(reps)
+    .sort((a, b) => (b.request_date || '').localeCompare(a.request_date || ''));
 
   if (mine.length === 0) {
-    listEl.innerHTML = `<div class="lb-empty">No requests yet. Use the "New Request" tab to submit one.</div>`;
+    listEl.innerHTML = `<div class="lb-empty">No requests yet. Use the "Requirements" or "Repair Request" tabs to submit one.</div>`;
     return;
   }
 
-  listEl.innerHTML = mine.map(r => `
-    <div class="req-card">
-      <div class="req-card-h">
-        <div>
-          <div class="req-card-title">${r.product_name}</div>
-          <div class="req-card-meta">${_invTitleCase(r.city)} · ${_invFmtDate(r.request_date)}</div>
+  listEl.innerHTML = mine.map(r => {
+    const status = r.status || 'Pending';
+    const statusCls = status.toLowerCase();
+    if (r.kind === 'repair') {
+      return `
+        <div class="req-card">
+          <div class="req-card-h">
+            <div>
+              <div class="req-card-title">${r.product_name || r.product_id} <span style="font-size:10px;font-weight:800;color:var(--accent);background:#FFF0F6;padding:1px 6px;border-radius:999px;margin-left:4px">REPAIR</span></div>
+              <div class="req-card-meta">${_invTitleCase(r.city)} · ${_invFmtDate(r.request_date)}</div>
+            </div>
+            <span class="req-status req-status-${statusCls}">${status}</span>
+          </div>
+          <div class="req-card-body">
+            To repair: <span class="qty">${r.qty}</span>
+            ${r.damage_type ? ' · ' + r.damage_type : ''}
+            ${r.description ? '<br><span style="color:var(--muted)">' + r.description + '</span>' : ''}
+            ${r.photo_url && !r.photo_url.startsWith('PHOTO_UPLOAD_FAILED') ? '<br><a href="' + r.photo_url + '" target="_blank" rel="noopener" style="font-size:12px;font-weight:700;color:var(--accent)">📷 View photo</a>' : ''}
+            ${r.resolved_by_name ? '<br><span style="color:var(--muted);font-size:11px">' + status + ' by ' + r.resolved_by_name + (r.resolved_date ? ' on ' + _invFmtDate(r.resolved_date) : '') + '</span>' : ''}
+          </div>
         </div>
-        <span class="req-status req-status-${r.status.toLowerCase()}">${r.status}</span>
+      `;
+    }
+    // requirement card (unchanged)
+    return `
+      <div class="req-card">
+        <div class="req-card-h">
+          <div>
+            <div class="req-card-title">${r.product_name}</div>
+            <div class="req-card-meta">${_invTitleCase(r.city)} · ${_invFmtDate(r.request_date)}</div>
+          </div>
+          <span class="req-status req-status-${statusCls}">${status}</span>
+        </div>
+        <div class="req-card-body">
+          Requested: <span class="qty">${r.required_qty}</span> ·
+          Need by: ${r.required_by_date || '—'}
+          ${r.reason ? '<br><span style="color:var(--muted)">' + r.reason + '</span>' : ''}
+          ${r.resolved_by_name ? '<br><span style="color:var(--muted);font-size:11px">' + status + ' by ' + r.resolved_by_name + (r.resolved_date ? ' on ' + _invFmtDate(r.resolved_date) : '') + (r.remarks ? ' — ' + r.remarks : '') + '</span>' : ''}
+        </div>
       </div>
-      <div class="req-card-body">
-        Requested: <span class="qty">${r.required_qty}</span> ·
-        Need by: ${r.required_by_date || '—'}
-        ${r.reason ? '<br><span style="color:var(--muted)">' + r.reason + '</span>' : ''}
-        ${r.resolved_by_name ? '<br><span style="color:var(--muted);font-size:11px">' + r.status + ' by ' + r.resolved_by_name + (r.resolved_date ? ' on ' + _invFmtDate(r.resolved_date) : '') + (r.remarks ? ' — ' + r.remarks : '') + '</span>' : ''}
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
+}
+
+// ═════════════════════════════════════════════════════════
+// REPAIR REQUEST (v5.6 — Module 3b)
+// ═════════════════════════════════════════════════════════
+
+// Triggered by the <input type="file"> onchange handler. Reads the chosen
+// image as a data URL, shows a preview, and stashes the payload on state
+// for the eventual POST. Keeps things in-memory (no localStorage) since
+// base64 images can be large.
+function onRepairPhotoChange(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) { clearRepairPhoto(); return; }
+
+  // Soft cap at ~5 MB to keep Apps Script POSTs reasonable. Above this we
+  // ask the user to compress / re-take — better than silently failing the
+  // upload server-side.
+  const MAX_BYTES = 5 * 1024 * 1024;
+  if (file.size > MAX_BYTES) {
+    showError('reqReqError', `Photo is too large (${(file.size/1024/1024).toFixed(1)} MB). Please use a photo under 5 MB.`);
+    event.target.value = '';
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function() {
+    const dataUrl = String(reader.result || '');
+    // Strip the "data:<mime>;base64," prefix — backend re-adds nothing,
+    // it just base64-decodes the body.
+    const commaIdx = dataUrl.indexOf(',');
+    const base64 = commaIdx > -1 ? dataUrl.substring(commaIdx + 1) : dataUrl;
+    state.repairPhotoData = {
+      base64,
+      mime:     file.type || 'image/jpeg',
+      filename: file.name || 'repair_photo.jpg',
+      size:     file.size,
+    };
+    // Show preview
+    const img = document.getElementById('repPhotoPreview');
+    img.src = dataUrl;
+    document.getElementById('repPhotoPreviewWrap').style.display = 'block';
+    document.getElementById('repPhotoInfo').textContent = `${file.name} · ${(file.size/1024).toFixed(0)} KB`;
+  };
+  reader.onerror = function() {
+    showError('reqReqError', 'Could not read the photo. Please try again.');
+    clearRepairPhoto();
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearRepairPhoto() {
+  state.repairPhotoData = null;
+  const input = document.getElementById('repPhotoInput');
+  if (input) input.value = '';
+  const wrap = document.getElementById('repPhotoPreviewWrap');
+  if (wrap) wrap.style.display = 'none';
+  const img = document.getElementById('repPhotoPreview');
+  if (img) img.src = '';
+}
+
+async function submitRepairRequest() {
+  hideMsg('reqReqError');
+  hideMsg('reqReqSuccess');
+
+  const city  = document.getElementById('repCitySelect').value.trim();
+  const pid   = document.getElementById('repItemSelect').value.trim();
+  const pname = (state.productCatalog.find(p => p.product_id === pid) || {}).product_name || '';
+  const qty   = parseInt(document.getElementById('repQty').value || '0', 10);
+  const dmg   = document.getElementById('repDamageType').value.trim();
+  const desc  = document.getElementById('repDescription').value.trim();
+
+  if (!city || !pid)              { showError('reqReqError', 'Please pick a city and an item.'); return; }
+  if (!qty || qty < 1)            { showError('reqReqError', 'Quantity to repair must be at least 1.'); return; }
+  if (!dmg)                       { showError('reqReqError', 'Please select a damage type.'); return; }
+  if (!desc || desc.length < 5)   { showError('reqReqError', 'Please describe the damage (at least 5 characters).'); return; }
+
+  // Permission check — same as requirement requests
+  const isCentral = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  if (!isCentral && state.assignedCity && city.toLowerCase() !== state.assignedCity.toLowerCase()) {
+    showError('reqReqError', "You can only raise repair requests for your assigned city.");
+    return;
+  }
+
+  const repairId = 'REP-' + Date.now() + '-' + Math.floor(Math.random() * 9000 + 1000);
+  const now = new Date().toISOString();
+
+  const payload = {
+    action:        'submitRepairRequest',
+    repair_id:     repairId,
+    agent_code:    state.agentCode,
+    agent_name:    state.agentName,
+    city:          city,
+    product_id:    pid,
+    product_name:  pname,
+    qty:           qty,
+    damage_type:   dmg,
+    description:   desc,
+    request_date:  now,
+  };
+  if (state.repairPhotoData) {
+    payload.photo_base64   = state.repairPhotoData.base64;
+    payload.photo_mime     = state.repairPhotoData.mime;
+    payload.photo_filename = repairId + '_' + (state.repairPhotoData.filename || 'photo.jpg');
+  }
+
+  const btn = document.getElementById('repSubmitBtn');
+  btn.disabled = true; btn.textContent = state.repairPhotoData ? 'Uploading photo…' : 'Submitting…';
+
+  try {
+    if (CONFIG.INVENTORY_STOCK_SHEET_ID && !CONFIG.INVENTORY_STOCK_SHEET_ID.startsWith('REPLACE_')) {
+      await postToScript(payload);
+    } else {
+      _invToast('Demo mode — backend not wired. Saved locally only.', 'error');
+    }
+
+    // Optimistically cache locally so "My Requests" updates without a re-fetch.
+    // photo_url isn't known client-side yet (the Drive link is generated server-side);
+    // a refresh of loadInventoryRepairs() later will pick it up.
+    state.inventoryRepairs.push({
+      repair_id:  repairId,
+      agent_code: state.agentCode, agent_name: state.agentName,
+      city, product_id: pid, product_name: pname,
+      qty, damage_type: dmg, description: desc,
+      photo_url: state.repairPhotoData ? '(uploading…)' : '',
+      status: 'Pending', request_date: now,
+      resolved_date: '', resolved_by_name: '',
+    });
+
+    _invToast('Repair request submitted', 'success');
+    const successEl = document.getElementById('reqReqSuccess');
+    successEl.textContent = 'Repair request submitted! Check the "My Requests" tab to track status.';
+    successEl.style.display = 'block';
+
+    // Reset form
+    document.getElementById('repQty').value = 1;
+    document.getElementById('repDamageType').value = '';
+    document.getElementById('repDescription').value = '';
+    clearRepairPhoto();
+    _renderMyRequestsCount();
+
+    // Refresh the canonical list in the background so the photo_url shows up.
+    loadInventoryRepairs(true).catch(() => {});
+
+    btn.textContent = 'Submitted ✓';
+    setTimeout(() => { btn.textContent = 'Submit Repair Request'; btn.disabled = false; }, 1500);
+  } catch (e) {
+    showError('reqReqError', 'Could not submit. Please check your connection and try again.');
+    btn.disabled = false; btn.textContent = 'Submit Repair Request';
+  }
+}
+
+// Pulls "Inventory_Repairs" from the same spreadsheet that holds stock +
+// requirements. Mirrors loadInventoryRequests() in structure so future
+// admin-side review screens can reuse the same shape.
+async function loadInventoryRepairs(force) {
+  if (state.inventoryRepairsLoaded && !force) return;
+  if (!CONFIG.INVENTORY_STOCK_SHEET_ID || CONFIG.INVENTORY_STOCK_SHEET_ID.startsWith('REPLACE_')) {
+    state.inventoryRepairs = [];
+    state.inventoryRepairsLoaded = true;
+    return;
+  }
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.INVENTORY_STOCK_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Inventory_Repairs`;
+  try {
+    const res = await fetch(url);
+    const text = await res.text();
+    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+      // Tab doesn't exist yet — treat as empty so the UI still works.
+      state.inventoryRepairs = [];
+      state.inventoryRepairsLoaded = true;
+      return;
+    }
+    const rows = parseCSV(text);
+    const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('repair_id')));
+    if (headerIdx === -1) {
+      state.inventoryRepairs = [];
+      state.inventoryRepairsLoaded = true;
+      return;
+    }
+    const h = rows[headerIdx].map(c => String(c).toLowerCase().trim());
+    const col = (name) => h.findIndex(c => c === name);
+    state.inventoryRepairs = rows.slice(headerIdx + 1)
+      .filter(r => r[col('repair_id')] && String(r[col('repair_id')]).trim())
+      .map(r => ({
+        repair_id:        String(r[col('repair_id')]        || '').trim(),
+        agent_code:       String(r[col('agent_code')]       || '').trim(),
+        agent_name:       String(r[col('agent_name')]       || '').trim(),
+        city:             String(r[col('city')]             || '').trim(),
+        product_id:       String(r[col('product_id')]       || '').trim(),
+        product_name:     String(r[col('product_name')]     || '').trim(),
+        qty:              parseInt(r[col('qty')] || '0', 10) || 0,
+        damage_type:      String(r[col('damage_type')]      || '').trim(),
+        description:      String(r[col('description')]      || '').trim(),
+        photo_url:        String(r[col('photo_url')]        || '').trim(),
+        status:           String(r[col('status')]           || 'Pending').trim(),
+        request_date:     String(r[col('request_date')]     || '').trim(),
+        resolved_date:    String(r[col('resolved_date')]    || '').trim(),
+        resolved_by_name: String(r[col('resolved_by_name')] || '').trim(),
+      }));
+    state.inventoryRepairsLoaded = true;
+  } catch (e) {
+    state.inventoryRepairs = [];
+    state.inventoryRepairsLoaded = true;
+  }
 }
 
 async function submitRequirementRequest() {
