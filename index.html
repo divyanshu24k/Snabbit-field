@@ -2085,7 +2085,8 @@ let state = {
   inventoryUpdateAccess:    false,
   inventoryDashboardAccess: false,
   inventoryRole:            '',     // 'central' | 'manager' | 'tl' | ''
-  assignedCity:             '',     // city name, or 'ALL' for central
+  assignedCity:             '',     // raw cell value: city name, comma-separated list, or 'ALL'
+  assignedCities:           [],     // parsed array of city names (or ['ALL']); use this for scope checks
   productCatalog:           [],     // [{product_id, product_name, category, active}]
   productCatalogLoaded:     false,
   inventoryStock:           [],     // [{record_id, city, tl_manager_name, product_id, product_name, total_stock, stock_not_in_use, stock_in_use, stock_damaged, stock_with_ex_bde, last_updated, updated_by_name, remarks}]
@@ -2314,6 +2315,7 @@ async function doLogin() {
     state.inventoryDashboardAccess = invDashIdx >= 0 ? toBoolean(match[invDashIdx]) : false;
     state.inventoryRole            = invRoleIdx >= 0 ? String(match[invRoleIdx] || '').trim().toLowerCase() : '';
     state.assignedCity             = assignedCityIdx >= 0 ? String(match[assignedCityIdx] || '').trim() : '';
+    state.assignedCities           = _parseAssignedCities(state.assignedCity, state.inventoryRole);
     // v5.8 — Offline Branding access
     state.brandingAccess           = brandingIdx >= 0 ? toBoolean(match[brandingIdx]) : false;
     // v5.9 — Payments access (parse comma-separated codes from column T)
@@ -2360,7 +2362,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -2373,7 +2375,7 @@ document.getElementById('loginUsername').addEventListener('keydown', e => { if (
 // HOME CARDS
 // ─────────────────────────────────────────────────────────
 function renderHomeCards() {
-  const isCentralForReview = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  const isCentralForReview = _invIsCentral();
   const cards = [
     { icon:'🏘️', title:'Add Society',     sub:'Visit & record a society near you',  access: state.societyAccess,     action:'startAddSociety()' },
     { icon:'📲', title:'WhatsApp Blast',  sub:'Send your unique invite link',        access: state.blastAccess,       action:'startWhatsappBlast()' },
@@ -4050,16 +4052,46 @@ function _invDaysAgo(iso) {
 
 function _invScopeLabel() {
   const role = state.inventoryRole;
-  const city = state.assignedCity;
-  if (role === 'central' || (city && city.toUpperCase() === 'ALL')) return 'All Cities · Central';
-  if (city) return _invTitleCase(city) + ' · ' + (role === 'manager' ? 'Manager' : role === 'tl' ? 'TL' : 'View');
-  return 'Unscoped';
+  const cities = state.assignedCities || [];
+  if (role === 'central' || cities[0] === 'ALL') return 'All Cities · Central';
+  if (cities.length === 0) return 'Unscoped';
+  const roleLabel = role === 'manager' ? 'Manager' : role === 'tl' ? 'TL' : 'View';
+  // Multi-city: show count rather than the full list to keep the header compact.
+  // The dashboard's city filter is what users will look at for the actual list.
+  if (cities.length === 1) return _invTitleCase(cities[0]) + ' · ' + roleLabel;
+  return cities.length + ' cities · ' + roleLabel;
 }
 
 function _invInScope(record) {
-  if (state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL') return true;
-  if (!state.assignedCity) return false;
-  return String(record.city || '').toLowerCase() === state.assignedCity.toLowerCase();
+  if (state.inventoryRole === 'central') return true;
+  const cities = state.assignedCities || [];
+  if (cities[0] === 'ALL') return true;
+  if (cities.length === 0) return false;
+  const recCity = String(record.city || '').toLowerCase();
+  return cities.some(c => c.toLowerCase() === recCity);
+}
+
+// Parse the raw "Assigned City" cell into an array of city names (or ['ALL']).
+// Handles: 'Pune', 'Pune,Mumbai', 'Pune, Mumbai', ' pune , MUMBAI '. Returns
+// [] if the cell is blank. 'ALL' (any casing) anywhere in the list collapses
+// to ['ALL'] — partial-ALL doesn't make sense.
+// TLs are restricted to a single city by policy: even if the cell has multiple
+// values, only the first is honoured for role='tl'.
+function _parseAssignedCities(raw, role) {
+  if (!raw) return [];
+  const parts = String(raw).split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return [];
+  if (parts.some(p => p.toUpperCase() === 'ALL')) return ['ALL'];
+  if (role === 'tl') return [parts[0]];   // defensive: TLs are single-city only
+  return parts;
+}
+
+// True iff the current user has central-equivalent permissions (full access).
+// Use this everywhere instead of inlining the inventoryRole/'ALL' check.
+function _invIsCentral() {
+  if (state.inventoryRole === 'central') return true;
+  const cities = state.assignedCities || [];
+  return cities[0] === 'ALL';
 }
 
 // ─────────────────────────────────────────────────────────
@@ -4225,22 +4257,29 @@ function _populateDashFilters() {
   const itemEl = document.getElementById('invDashFilterItem');
   if (!cityEl || !itemEl) return;
 
-  const isCentral = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  const isCentral = _invIsCentral();
 
   // ── Cities
   // Use the same source the form dropdowns use, but only show ones in scope.
   let cities = _invAllCities();
-  if (!isCentral && state.assignedCity) {
-    cities = cities.filter(c => c.toLowerCase() === state.assignedCity.toLowerCase());
+  if (!isCentral) {
+    const assigned = (state.assignedCities || []).map(c => c.toLowerCase());
+    cities = cities.filter(c => assigned.indexOf(c.toLowerCase()) >= 0);
   }
   const prevCity = cityEl.value;
   cityEl.innerHTML = '<option value="">All cities</option>' +
     cities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`).join('');
   if (prevCity && cities.includes(prevCity)) cityEl.value = prevCity;
-  // Non-central users see only their city — disable to avoid confusion.
+  // Single-city non-central users see only their city — lock the filter.
+  // Multi-city managers keep the dropdown enabled (Option B: city picker).
   if (!isCentral && cities.length === 1) {
     cityEl.value = cities[0];
     cityEl.disabled = true;
+  } else if (!isCentral && cities.length > 1) {
+    // Default to first assigned city — Option B avoids cross-city aggregation
+    // by default. User can change to "All cities" if they want to.
+    if (!prevCity) cityEl.value = cities[0];
+    cityEl.disabled = false;
   } else {
     cityEl.disabled = false;
   }
@@ -4464,12 +4503,17 @@ async function loadInventoryStaff() {
     }
     state.inventoryStaff = rows.slice(headerIdx + 1)
       .filter(r => toBoolean(r[aIdx]))  // active users only
-      .map(r => ({
-        name: String(r[nIdx] || '').trim(),
-        code: String(r[cIdx] || '').trim(),
-        role: String(r[invRoleIdx] || '').trim().toLowerCase(),
-        city: assignedCityIdx >= 0 ? String(r[assignedCityIdx] || '').trim() : '',
-      }))
+      .map(r => {
+        const role = String(r[invRoleIdx] || '').trim().toLowerCase();
+        const rawCity = assignedCityIdx >= 0 ? String(r[assignedCityIdx] || '').trim() : '';
+        return {
+          name: String(r[nIdx] || '').trim(),
+          code: String(r[cIdx] || '').trim(),
+          role: role,
+          city: rawCity,                                  // raw cell, kept for display
+          cities: _parseAssignedCities(rawCity, role),    // parsed list for matching
+        };
+      })
       .filter(s => s.name && (s.role === 'manager' || s.role === 'tl'));
     state.inventoryStaffLoaded = true;
   } catch (e) {
@@ -4482,7 +4526,7 @@ async function loadInventoryStaff() {
 function _populateTLDropdown(selectedCity) {
   const sel = document.getElementById('invTLName');
   const role = state.inventoryRole;
-  const isCentral = role === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  const isCentral = _invIsCentral();
 
   if (!isCentral) {
     // Locked to own name — single-option select
@@ -4492,11 +4536,18 @@ function _populateTLDropdown(selectedCity) {
     return;
   }
 
-  // Central — show full list, optionally filtered by selected city
+  // Central — show full list, optionally filtered by selected city.
+  // A staff member matches if any of their assigned cities matches, or if they're
+  // assigned 'ALL', or if they have no assignment recorded yet.
   sel.disabled = false;
   let staff = state.inventoryStaff.slice();
   if (selectedCity) {
-    const filtered = staff.filter(s => !s.city || s.city.toUpperCase() === 'ALL' || s.city.toLowerCase() === selectedCity.toLowerCase());
+    const target = selectedCity.toLowerCase();
+    const filtered = staff.filter(s => {
+      if (!s.cities || s.cities.length === 0) return true;       // no assignment yet
+      if (s.cities[0] === 'ALL') return true;
+      return s.cities.some(c => c.toLowerCase() === target);
+    });
     if (filtered.length > 0) staff = filtered;
     // else: no one assigned to this city yet — fall through to showing everyone
   }
@@ -4527,9 +4578,16 @@ function _invAllCities() {
     const c = String(r.city || '').trim();
     if (c && !map.has(c.toLowerCase())) map.set(c.toLowerCase(), c);
   });
+  // Staff entries may have a list of cities (multi-city managers) — expand and
+  // skip 'ALL' since it isn't a real city.
   state.inventoryStaff.forEach(s => {
-    const c = String(s.city || '').trim();
-    if (c && c.toUpperCase() !== 'ALL' && !map.has(c.toLowerCase())) map.set(c.toLowerCase(), c);
+    const list = (s.cities && s.cities.length) ? s.cities : (s.city ? [s.city] : []);
+    list.forEach(c => {
+      const cc = String(c || '').trim();
+      if (cc && cc.toUpperCase() !== 'ALL' && !map.has(cc.toLowerCase())) {
+        map.set(cc.toLowerCase(), cc);
+      }
+    });
   });
   if (map.size === 0) {
     // Last-resort fallback so the form is at least usable on a fresh install.
@@ -4557,17 +4615,24 @@ async function openInventoryUpdate(prefillRecordId) {
   }
 
   // City dropdown
-  const role = state.inventoryRole;
-  const isCentral = role === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  const isCentral = _invIsCentral();
   const citySel = document.getElementById('invCitySelect');
   const allCities = _invAllCities();  // v5.6 — never empty
+  const assignedCities = state.assignedCities || [];
   if (isCentral) {
+    // Central: every city
     citySel.disabled = false;
     citySel.innerHTML = ['<option value="">Select city…</option>']
       .concat(allCities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`)).join('');
+  } else if (assignedCities.length > 1) {
+    // Multi-city manager: dropdown of just their cities, must pick one
+    citySel.disabled = false;
+    citySel.innerHTML = ['<option value="">Select city…</option>']
+      .concat(assignedCities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`)).join('');
   } else {
+    // Single-city (TL or single-city manager): locked label
     citySel.disabled = true;
-    const c = state.assignedCity || '';
+    const c = assignedCities[0] || state.assignedCity || '';
     citySel.innerHTML = `<option value="${c}">${_invTitleCase(c)}</option>`;
     citySel.value = c;
   }
@@ -4731,8 +4796,9 @@ async function submitInventoryUpdate() {
   }
 
   // Permission check (client-side; backend MUST re-check)
-  const isCentral = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
-  if (!isCentral && state.assignedCity && city.toLowerCase() !== state.assignedCity.toLowerCase()) {
+  const isCentral = _invIsCentral();
+  const allowedCities = (state.assignedCities || []).map(c => c.toLowerCase());
+  if (!isCentral && !allowedCities.includes(city.toLowerCase())) {
     showError('invUpdateError', "You don't have permission to update inventory for this city.");
     return;
   }
@@ -4922,18 +4988,22 @@ async function openRequirementRequest() {
     return;
   }
 
-  // City dropdown — same logic as Inventory Update
-  const role = state.inventoryRole;
-  const isCentral = role === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
+  // City dropdown — same logic as Inventory Update (handles multi-city managers)
+  const isCentral = _invIsCentral();
   const citySel = document.getElementById('reqCitySelect');
   const allCities = _invAllCities();  // v5.6 — never empty
+  const assignedCities = state.assignedCities || [];
   if (isCentral) {
     citySel.disabled = false;
     citySel.innerHTML = ['<option value="">Select city…</option>']
       .concat(allCities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`)).join('');
+  } else if (assignedCities.length > 1) {
+    citySel.disabled = false;
+    citySel.innerHTML = ['<option value="">Select city…</option>']
+      .concat(assignedCities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`)).join('');
   } else {
     citySel.disabled = true;
-    const c = state.assignedCity || '';
+    const c = assignedCities[0] || state.assignedCity || '';
     citySel.innerHTML = `<option value="${c}">${_invTitleCase(c)}</option>`;
     citySel.value = c;
   }
@@ -4949,9 +5019,13 @@ async function openRequirementRequest() {
     repCitySel.disabled = false;
     repCitySel.innerHTML = ['<option value="">Select city…</option>']
       .concat(allCities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`)).join('');
+  } else if (assignedCities.length > 1) {
+    repCitySel.disabled = false;
+    repCitySel.innerHTML = ['<option value="">Select city…</option>']
+      .concat(assignedCities.map(c => `<option value="${c}">${_invTitleCase(c)}</option>`)).join('');
   } else {
     repCitySel.disabled = true;
-    const c = state.assignedCity || '';
+    const c = assignedCities[0] || state.assignedCity || '';
     repCitySel.innerHTML = `<option value="${c}">${_invTitleCase(c)}</option>`;
     repCitySel.value = c;
   }
@@ -5140,9 +5214,10 @@ async function submitRepairRequest() {
   if (!desc || desc.length < 5)   { showError('reqReqError', 'Please describe the damage (at least 5 characters).'); return; }
 
   // Permission check — same as requirement requests
-  const isCentral = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
-  if (!isCentral && state.assignedCity && city.toLowerCase() !== state.assignedCity.toLowerCase()) {
-    showError('reqReqError', "You can only raise repair requests for your assigned city.");
+  const isCentral = _invIsCentral();
+  const allowedCities = (state.assignedCities || []).map(c => c.toLowerCase());
+  if (!isCentral && !allowedCities.includes(city.toLowerCase())) {
+    showError('reqReqError', "You can only raise repair requests for your assigned cities.");
     return;
   }
 
@@ -5285,9 +5360,10 @@ async function submitRequirementRequest() {
   if (!reason || reason.length < 5) { showError('reqReqError', 'Please give a brief reason (at least 5 characters).'); return; }
 
   // Permission check
-  const isCentral = state.inventoryRole === 'central' || (state.assignedCity || '').toUpperCase() === 'ALL';
-  if (!isCentral && state.assignedCity && city.toLowerCase() !== state.assignedCity.toLowerCase()) {
-    showError('reqReqError', "You can only raise requests for your assigned city.");
+  const isCentral = _invIsCentral();
+  const allowedCities = (state.assignedCities || []).map(c => c.toLowerCase());
+  if (!isCentral && !allowedCities.includes(city.toLowerCase())) {
+    showError('reqReqError', "You can only raise requests for your assigned cities.");
     return;
   }
 
