@@ -860,6 +860,8 @@
   .req-status-approved  { background: rgba(34,118,255,0.10); color: #1A5BD6; border: 1.5px solid rgba(34,118,255,0.3); }
   .req-status-rejected  { background: #FFF0F5; color: var(--error); border: 1.5px solid rgba(255,31,125,0.3); }
   .req-status-fulfilled { background: rgba(0,196,140,0.12); color: #00966A; border: 1.5px solid rgba(0,196,140,0.3); }
+  .req-status-in-review { background: rgba(122,77,217,0.10); color: #6B3FBF; border: 1.5px solid rgba(122,77,217,0.3); }
+  .req-status-repaired  { background: rgba(0,196,140,0.12); color: #00966A; border: 1.5px solid rgba(0,196,140,0.3); }
 
   /* A request card — used on both "my requests" tab and admin queue */
   .req-card {
@@ -1600,21 +1602,44 @@
 <div class="screen" id="screen-requirement-review">
   <div class="big-label">Inventory</div>
   <div class="big-title">Review Requests</div>
-  <p class="sub">Approve, reject, or mark requests as fulfilled. TLs and Managers see updated status instantly.</p>
+  <p class="sub">Approve, reject, or progress requests. TLs and Managers see updated status instantly.</p>
 
   <div id="reqRevError" class="error-msg"></div>
 
-  <!-- Filter tabs -->
-  <div class="req-tabs" id="reqRevTabs">
-    <div class="req-tab active" data-status="pending" onclick="switchReqRevTab('pending')">Pending <span class="count" id="reqRevCountPending">0</span></div>
-    <div class="req-tab" data-status="approved" onclick="switchReqRevTab('approved')">Approved <span class="count" id="reqRevCountApproved">0</span></div>
-    <div class="req-tab" data-status="fulfilled" onclick="switchReqRevTab('fulfilled')">Fulfilled <span class="count" id="reqRevCountFulfilled">0</span></div>
-    <div class="req-tab" data-status="rejected" onclick="switchReqRevTab('rejected')">Rejected <span class="count" id="reqRevCountRejected">0</span></div>
-    <div class="req-tab" data-status="all" onclick="switchReqRevTab('all')">All</div>
+  <!-- Top tabs: Stock Requests vs Repairs -->
+  <div class="tab-strip" id="reqRevTopTabs">
+    <div class="tab-pill active" data-toptab="stock"   onclick="switchReqRevTopTab('stock')">Stock Requests</div>
+    <div class="tab-pill"        data-toptab="repairs" onclick="switchReqRevTopTab('repairs')">Repairs</div>
   </div>
 
-  <div id="reqRevLoading" class="loading" style="display:none"><div class="spinner"></div> Loading requests…</div>
-  <div id="reqRevList"></div>
+  <!-- Stock Requests panel -->
+  <div id="reqRevPanelStock">
+    <!-- Status sub-tabs -->
+    <div class="req-tabs" id="reqRevTabs">
+      <div class="req-tab active" data-status="pending"   onclick="switchReqRevTab('pending')">Pending <span class="count" id="reqRevCountPending">0</span></div>
+      <div class="req-tab" data-status="approved"  onclick="switchReqRevTab('approved')">Approved <span class="count" id="reqRevCountApproved">0</span></div>
+      <div class="req-tab" data-status="fulfilled" onclick="switchReqRevTab('fulfilled')">Fulfilled <span class="count" id="reqRevCountFulfilled">0</span></div>
+      <div class="req-tab" data-status="rejected"  onclick="switchReqRevTab('rejected')">Rejected <span class="count" id="reqRevCountRejected">0</span></div>
+      <div class="req-tab" data-status="all"       onclick="switchReqRevTab('all')">All</div>
+    </div>
+    <div id="reqRevLoading" class="loading" style="display:none"><div class="spinner"></div> Loading requests…</div>
+    <div id="reqRevList"></div>
+  </div>
+
+  <!-- Repairs panel -->
+  <div id="reqRevPanelRepairs" style="display:none">
+    <!-- Status sub-tabs — 5 PRD statuses + All -->
+    <div class="req-tabs" id="repRevTabs">
+      <div class="req-tab active" data-status="pending"    onclick="switchRepRevTab('pending')">Pending <span class="count" id="repRevCountPending">0</span></div>
+      <div class="req-tab" data-status="in_review"  onclick="switchRepRevTab('in_review')">In Review <span class="count" id="repRevCountInReview">0</span></div>
+      <div class="req-tab" data-status="approved"   onclick="switchRepRevTab('approved')">Approved <span class="count" id="repRevCountApproved">0</span></div>
+      <div class="req-tab" data-status="repaired"   onclick="switchRepRevTab('repaired')">Repaired <span class="count" id="repRevCountRepaired">0</span></div>
+      <div class="req-tab" data-status="rejected"   onclick="switchRepRevTab('rejected')">Rejected <span class="count" id="repRevCountRejected">0</span></div>
+      <div class="req-tab" data-status="all"        onclick="switchRepRevTab('all')">All</div>
+    </div>
+    <div id="repRevLoading" class="loading" style="display:none"><div class="spinner"></div> Loading repairs…</div>
+    <div id="repRevList"></div>
+  </div>
 </div>
 
 
@@ -2101,6 +2126,8 @@ let state = {
   inventoryRequestsLoaded:  false,
   reqReqTab:                'new',  // 'new' | 'repair' | 'mine'
   reqRevTab:                'pending', // pending | approved | fulfilled | rejected | all
+  reqRevTopTab:             'stock',   // 'stock' | 'repairs' — top-tab on Review screen
+  repRevTab:                'pending', // pending | in_review | approved | repaired | rejected | all
   // v5.6 — Repair Requests (Module 3b)
   inventoryRepairs:         [],     // [{repair_id, agent_code, agent_name, city, product_id, product_name, qty, damage_type, description, photo_url, status, request_date, resolved_date, resolved_by_name}]
   inventoryRepairsLoaded:   false,
@@ -2362,7 +2389,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -5426,13 +5453,28 @@ async function submitRequirementRequest() {
 // ─────────────────────────────────────────────────────────
 async function openRequirementReview() {
   hideMsg('reqRevError');
-  state.reqRevTab = 'pending';
+  state.reqRevTopTab = 'stock';
+  state.reqRevTab    = 'pending';
+  state.repRevTab    = 'pending';
   navigate('screen-requirement-review');
+
+  // Show the stock panel by default (matches reqRevTopTab='stock').
+  document.getElementById('reqRevPanelStock').style.display   = 'block';
+  document.getElementById('reqRevPanelRepairs').style.display = 'none';
+  document.querySelectorAll('#reqRevTopTabs .tab-pill').forEach(el => {
+    el.classList.toggle('active', el.dataset.toptab === 'stock');
+  });
+
   document.getElementById('reqRevLoading').style.display = 'flex';
   document.getElementById('reqRevList').innerHTML = '';
+  document.getElementById('repRevList').innerHTML = '';
 
   try {
-    await loadInventoryRequests(true);
+    // Load both in parallel — Anjali will likely switch tabs at some point.
+    await Promise.all([
+      loadInventoryRequests(true),
+      loadInventoryRepairs(true),
+    ]);
   } catch(e) {
     showError('reqRevError', 'Could not load requests.');
     document.getElementById('reqRevLoading').style.display = 'none';
@@ -5440,7 +5482,25 @@ async function openRequirementReview() {
   }
   document.getElementById('reqRevLoading').style.display = 'none';
   _renderReqRevCounts();
+  _renderRepRevCounts();
   switchReqRevTab('pending');
+  // Don't switch the repair sub-tab yet — that happens lazily when the user
+  // clicks the Repairs top-tab. Just leave its state set to 'pending'.
+}
+
+// Top-tab switcher: Stock Requests vs Repairs. Swaps the two panels.
+function switchReqRevTopTab(top) {
+  state.reqRevTopTab = top;
+  document.querySelectorAll('#reqRevTopTabs .tab-pill').forEach(el => {
+    el.classList.toggle('active', el.dataset.toptab === top);
+  });
+  document.getElementById('reqRevPanelStock').style.display   = top === 'stock'   ? 'block' : 'none';
+  document.getElementById('reqRevPanelRepairs').style.display = top === 'repairs' ? 'block' : 'none';
+  if (top === 'repairs') {
+    // Re-render in case repair data was updated elsewhere.
+    _renderRepRevCounts();
+    switchRepRevTab(state.repRevTab || 'pending');
+  }
 }
 
 function _renderReqRevCounts() {
@@ -5543,6 +5603,165 @@ async function actOnRequest(requestId, newStatus) {
     _invToast(`Marked as ${newStatus}`, 'success');
     _renderReqRevCounts();
     renderReqRev();
+  } catch(e) {
+    _invToast('Could not update. Please retry.', 'error');
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// REPAIR REVIEW (Central Team — Repairs sub-screen on the Review queue)
+// 5-state lifecycle per PRD: Pending → In Review → Approved → Repaired,
+// with Reject available except on terminal states (Repaired/Rejected).
+// Existing rows with legacy statuses (e.g. 'Fulfilled') render but show
+// no action buttons — admin fixes them by editing the sheet directly.
+// ─────────────────────────────────────────────────────────
+
+// Single source of truth for the 5 PRD statuses + the next legal action.
+// Keep this in sync with the Apps Script validator in handleUpdateRepairStatus.
+var REPAIR_STATUSES = ['Pending', 'In Review', 'Approved', 'Repaired', 'Rejected'];
+
+function _renderRepRevCounts() {
+  const all = state.inventoryRepairs;
+  const count = (s) => all.filter(r => r.status === s).length;
+  document.getElementById('repRevCountPending').textContent   = count('Pending');
+  document.getElementById('repRevCountInReview').textContent  = count('In Review');
+  document.getElementById('repRevCountApproved').textContent  = count('Approved');
+  document.getElementById('repRevCountRepaired').textContent  = count('Repaired');
+  document.getElementById('repRevCountRejected').textContent  = count('Rejected');
+}
+
+function switchRepRevTab(status) {
+  state.repRevTab = status;
+  document.querySelectorAll('#repRevTabs .req-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.status === status);
+  });
+  renderRepRev();
+}
+
+function renderRepRev() {
+  const listEl = document.getElementById('repRevList');
+  const tab = state.repRevTab;
+  let rows = state.inventoryRepairs.slice();
+  if (tab !== 'all') {
+    // sub-tab keys (lowercase, underscore) → canonical status strings
+    const statusMap = {
+      pending:   'Pending',
+      in_review: 'In Review',
+      approved:  'Approved',
+      repaired:  'Repaired',
+      rejected:  'Rejected',
+    };
+    rows = rows.filter(r => r.status === statusMap[tab]);
+  }
+  rows.sort((a,b) => (b.request_date || '').localeCompare(a.request_date || ''));
+
+  if (rows.length === 0) {
+    const labelMap = { in_review: 'In Review', pending: 'Pending', approved: 'Approved', repaired: 'Repaired', rejected: 'Rejected' };
+    const human = tab === 'all' ? 'yet' : 'in ' + (labelMap[tab] || tab) + ' status';
+    listEl.innerHTML = `<div class="lb-empty">No repair requests ${human}.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = rows.map(r => {
+    // CSS-safe modifier class: lowercase, spaces → hyphens.
+    const statusCls = String(r.status || '').toLowerCase().replace(/\s+/g, '-');
+    const actions = _repairActionsForStatus(r.status);
+    return `
+      <div class="req-card">
+        <div class="req-card-h">
+          <div>
+            <div class="req-card-title">${r.product_name || '(unknown item)'}</div>
+            <div class="req-card-meta">${_invTitleCase(r.city || '')} · ${r.agent_name || ''} · ${_invFmtDate(r.request_date)}</div>
+          </div>
+          <span class="req-status req-status-${statusCls}">${r.status || '—'}</span>
+        </div>
+        <div class="req-card-body">
+          Damaged qty: <span class="qty">${r.qty}</span>
+          ${r.damage_type ? ' · <b>' + r.damage_type + '</b>' : ''}
+          ${r.description ? '<br><i style="color:var(--muted)">"' + r.description + '"</i>' : ''}
+          ${r.resolved_by_name ? '<br><span style="color:var(--muted);font-size:11px">' + r.status + ' by ' + r.resolved_by_name + (r.resolved_date ? ' on ' + _invFmtDate(r.resolved_date) : '') + (r.remarks ? ' — ' + r.remarks : '') + '</span>' : ''}
+        </div>
+        ${actions.length ? `
+          <div class="req-card-actions">
+            ${actions.map(a => `<button class="req-action-btn ${a.cls}" onclick="actOnRepair('${r.repair_id}', '${a.status}')">${a.label}</button>`).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+// Returns the legal next-step buttons for the given current status. Terminal
+// states (Repaired, Rejected) return an empty list. Unknown legacy statuses
+// also return [] so admin must fix them via the sheet.
+function _repairActionsForStatus(status) {
+  switch (status) {
+    case 'Pending':
+      return [
+        { status: 'In Review', label: '👁 Mark In Review', cls: 'approve' },
+        { status: 'Rejected',  label: '✕ Reject',          cls: 'reject'  },
+      ];
+    case 'In Review':
+      return [
+        { status: 'Approved',  label: '✓ Approve', cls: 'approve' },
+        { status: 'Rejected',  label: '✕ Reject',  cls: 'reject'  },
+      ];
+    case 'Approved':
+      return [
+        { status: 'Repaired',  label: '🔧 Mark Repaired', cls: 'fulfil' },
+        { status: 'Rejected',  label: '✕ Reject',         cls: 'reject' },
+      ];
+    default:
+      return [];
+  }
+}
+
+async function actOnRepair(repairId, newStatus) {
+  if (REPAIR_STATUSES.indexOf(newStatus) < 0) {
+    _invToast('Invalid status: ' + newStatus, 'error');
+    return;
+  }
+
+  // Optional remark — collected for any state change Anjali might want to annotate.
+  let remarks = '';
+  if (newStatus === 'Rejected') {
+    remarks = prompt('Reason for rejection (optional, will be visible to requester):') || '';
+  } else if (newStatus === 'Repaired') {
+    remarks = prompt('Any note about the repair? (optional)') || '';
+  } else if (newStatus === 'In Review' || newStatus === 'Approved') {
+    remarks = prompt('Any note? (optional)') || '';
+  }
+
+  const now = new Date().toISOString();
+  const payload = {
+    action:           'updateRepairStatus',
+    repair_id:        repairId,
+    status:           newStatus,
+    resolved_date:    now,
+    resolved_by_code: state.agentCode,
+    resolved_by_name: state.agentName,
+    remarks:          remarks,
+  };
+
+  try {
+    if (CONFIG.INVENTORY_STOCK_SHEET_ID && !CONFIG.INVENTORY_STOCK_SHEET_ID.startsWith('REPLACE_')) {
+      await postToScript(payload);
+    } else {
+      _invToast('Demo mode — backend not wired. Updated locally only.', 'error');
+    }
+
+    // Update local cache so UI reflects the change without a reload.
+    const r = state.inventoryRepairs.find(x => x.repair_id === repairId);
+    if (r) {
+      r.status = newStatus;
+      r.resolved_date = now;
+      r.resolved_by_name = state.agentName;
+      r.remarks = remarks;
+    }
+
+    _invToast(`Marked as ${newStatus}`, 'success');
+    _renderRepRevCounts();
+    renderRepRev();
   } catch(e) {
     _invToast('Could not update. Please retry.', 'error');
   }
