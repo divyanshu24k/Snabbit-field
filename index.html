@@ -7,9 +7,45 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 5.5
+  VERSION     : 5.9
   LAST UPDATED: May 2026
 
+  CHANGES IN v5.9:
+    1. NEW MODULE: Payments (BTL finance team). 5 sub-features:
+         SP10U — Society Payments < 10k
+         SP10O — Society Payments > 10k
+         RMB   — Reimbursement
+         VP    — Vendor Payment
+         PP    — Promoter Payment
+       Each writes to a dedicated tab in PAYMENTS_SHEET_ID and uploads
+       supporting files (cheque, PAN, invoice, screenshot) to a
+       per-sub-feature Drive folder. URLs are stored in the sheet.
+    2. ACCESS CONTROL — three gates:
+         a) Per-user: column T of Login Credentials sheet, named
+            "Payments Access". Value is comma-separated codes
+            (e.g. "SP10U,RMB" or "ALL"). Blank = no access.
+         b) Global active toggle: read from Payments_Config tab in
+            PAYMENTS_SHEET_ID (admin can flip is_active to FALSE to
+            instantly stop accepting submissions per sub-feature).
+         c) Time window: also from Payments_Config. Default 20:00 IST
+            to 14:45 IST next day (wrap-around). Strict: backend
+            rejects with SUBMISSION_WINDOW_CLOSED if expired mid-fill.
+    3. CASCADING DROPDOWNS: City → MM → NM → Society. City list comes
+       from tab names of SOCIETY_MASTER_SHEET_ID. Each city tab has
+       columns: society_name | nm_name | mm_name. "Others (type below)"
+       option always present at the bottom of the society dropdown.
+    4. FILE UPLOADS: client-side compression for images (max 1600px,
+       JPEG q0.75). PDFs accepted as-is up to 5MB. Each file goes to
+       its sub-feature's Drive folder, named {submission_id}_{slot}.{ext}.
+    5. AUTO-CALC: total fields (total_permission_cost, total_cost,
+       total_amount) auto-computed from cost+gst or days×rate and
+       displayed as read-only.
+    6. NEW CONFIG: PAYMENTS_SHEET_ID, SOCIETY_MASTER_SHEET_ID.
+    7. doGet endpoint for getPaymentsConfig (CORS-friendly JSON).
+
+  CHANGES IN v5.8 (Offline Branding module — see below).
+  CHANGES IN v5.7 (Repair Requests — see below).
+  CHANGES IN v5.6 (NM-based row transfer).
   CHANGES IN v5.5:
     1. NEW MODULE: Requirement Request (Module 3 from the PRD).
        - TLs/Managers can raise a request for additional stock for
@@ -886,6 +922,13 @@
     background: var(--accent); color: #fff; border-radius: 999px;
     font-size: 10px; font-weight: 800; vertical-align: middle;
   }
+  /* ── PAYMENTS (v5.9) ── */
+  .pay-file-status {
+    margin-top: 6px; font-size: 12px; font-weight: 700; color: var(--muted);
+    min-height: 16px;
+  }
+  .pay-file-status.ok    { color: var(--success); }
+  .pay-file-status.err   { color: var(--error); }
 
 </style>
 </head>
@@ -1732,6 +1775,201 @@
 </div>
 
 
+<!-- ════════════════ PAYMENTS MODULE (v5.9) ════════════════ -->
+
+<!-- Screen 1: Sub-feature picker -->
+<div class="screen" id="screen-payments-picker">
+  <div class="big-label">Payments</div>
+  <div class="big-title">Choose Type</div>
+  <p class="sub">Pick the payment type you want to submit.</p>
+
+  <div id="paymentsWindowBanner" class="error-msg" style="display:none"></div>
+
+  <div id="paymentsPickerGrid" class="option-cards">
+    <!-- Built by JS based on user's access list -->
+  </div>
+
+  <button class="btn btn-secondary" style="margin-top:24px" onclick="navigate('screen-home')">← Back to Home</button>
+</div>
+
+<!-- Screen 2: Payments form (universal — fields shown/hidden per sub-feature) -->
+<div class="screen" id="screen-payments-form">
+  <div class="big-label">Payments</div>
+  <div class="big-title" id="paymentsFormTitle">—</div>
+  <p class="sub" id="paymentsFormSub">Fill in the details. All fields are required unless marked optional.</p>
+
+  <div id="paymentsClosedBanner" class="error-msg" style="display:none;background:#fff3cd;color:#856404;border:1px solid #ffeaa7"></div>
+  <div id="paymentsError" class="error-msg"></div>
+
+  <!-- ─── Society Payment fields (shared by SP10U + SP10O) ─── -->
+  <div id="payFieldsSociety" style="display:none">
+    <div class="input-wrap"><label>City</label><select id="payCitySelect"></select></div>
+    <div class="input-wrap"><label>MM Name</label><select id="payMmSelect" disabled></select></div>
+    <div class="input-wrap"><label>NM Name</label><select id="payNmSelect" disabled></select></div>
+    <div class="input-wrap"><label>Society Name</label><select id="paySocietySelect" disabled></select></div>
+    <div class="input-wrap" id="paySocietyOtherWrap" style="display:none">
+      <label>Society Name (please type)</label>
+      <input type="text" id="paySocietyOther" maxlength="120" placeholder="Type society name (or 'Market Activity — …')" />
+    </div>
+
+    <div class="input-wrap"><label>Permission Cost (₹)</label><input type="number" id="payPermCost" min="0" step="0.01" /></div>
+    <div class="input-wrap"><label>GST Amount (₹)</label><input type="number" id="payGstAmt" min="0" step="0.01" value="0" /></div>
+    <div class="input-wrap"><label>Total Permission Cost (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payTotalPermCost" readonly style="background:#f5f5f5" /></div>
+    <div class="input-wrap"><label>GST Number <small style="color:var(--muted);font-weight:600">optional</small></label><input type="text" id="payGstNum" maxlength="20" placeholder="e.g. 29ABCDE1234F1Z5" /></div>
+
+    <div class="input-wrap"><label>Flat Count <small style="color:var(--muted);font-weight:600">enter 0 for Market Activity</small></label><input type="number" id="payFlatCount" min="0" step="1" /></div>
+
+    <div class="input-wrap"><label>Beneficiary Name</label><input type="text" id="payBenefName" maxlength="120" /></div>
+    <div class="input-wrap"><label>Beneficiary Designation</label><input type="text" id="payBenefDesig" maxlength="80" /></div>
+    <div class="input-wrap"><label>Date of Activity</label><input type="date" id="payActivityDate" /></div>
+    <div class="input-wrap"><label>Detail of Activity</label><textarea id="payActivityDetail" maxlength="500"></textarea></div>
+    <div class="input-wrap"><label>Type of Activity</label>
+      <select id="payActivityType">
+        <option value="">Select type…</option>
+        <option value="Normal">Normal</option>
+        <option value="Engagement">Engagement</option>
+        <option value="Mega">Mega</option>
+      </select>
+    </div>
+    <div class="input-wrap"><label>D2D</label>
+      <select id="payD2D">
+        <option value="">Select…</option>
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+    </div>
+    <div class="input-wrap"><label>Payment Type</label>
+      <select id="payPaymentType">
+        <option value="">Select…</option>
+        <option value="GST">GST</option>
+        <option value="Non-GST">Non-GST</option>
+      </select>
+    </div>
+    <div class="input-wrap"><label>Account Number</label><input type="text" id="payAccountNum" inputmode="numeric" maxlength="20" /></div>
+    <div class="input-wrap"><label>IFSC Code</label><input type="text" id="payIfsc" maxlength="11" placeholder="e.g. HDFC0001234" /></div>
+    <div class="input-wrap"><label>Society SPOC Name</label><input type="text" id="paySpocName" maxlength="80" /></div>
+    <div class="input-wrap"><label>Society SPOC Number</label><input type="text" id="paySpocNum" inputmode="tel" maxlength="20" /></div>
+
+    <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:#c00;font-weight:600">required</small></label>
+      <input type="file" id="payChequeFile" accept="image/*,application/pdf" onchange="onPaymentsFile('cancelled_cheque', this)" />
+      <div id="payChequeStatus" class="pay-file-status"></div>
+    </div>
+    <div class="input-wrap"><label>PAN Card <small style="color:var(--muted);font-weight:600">optional</small></label>
+      <input type="file" id="payPanFile" accept="image/*,application/pdf" onchange="onPaymentsFile('pan_card', this)" />
+      <div id="payPanStatus" class="pay-file-status"></div>
+    </div>
+  </div>
+
+  <!-- ─── Reimbursement fields ─── -->
+  <div id="payFieldsRMB" style="display:none">
+    <div class="input-wrap"><label>Activity Date</label><input type="date" id="payRmbActivityDate" /></div>
+    <div class="input-wrap"><label>Type of Reimbursement</label>
+      <select id="payRmbType" onchange="onRmbTypeChange()">
+        <option value="">Select type…</option>
+        <option value="Goodies">Goodies</option>
+        <option value="Logistics">Logistics</option>
+        <option value="Society payment">Society payment</option>
+        <option value="Market Activity">Market Activity</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div class="input-wrap"><label>Cost (₹)</label><input type="number" id="payRmbCost" min="0" step="0.01" /></div>
+    <div class="input-wrap"><label>GST (₹)</label><input type="number" id="payRmbGst" min="0" step="0.01" value="0" /></div>
+    <div class="input-wrap"><label>Total Cost (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payRmbTotalCost" readonly style="background:#f5f5f5" /></div>
+    <div class="input-wrap"><label>Detail of Activity</label><textarea id="payRmbActivityDetail" maxlength="500"></textarea></div>
+    <div class="input-wrap"><label>Beneficiary Name</label><input type="text" id="payRmbBenefName" maxlength="120" /></div>
+    <div class="input-wrap"><label>Account Number</label><input type="text" id="payRmbAccountNum" inputmode="numeric" maxlength="20" /></div>
+    <div class="input-wrap"><label>IFSC Code</label><input type="text" id="payRmbIfsc" maxlength="11" /></div>
+    <div class="input-wrap"><label>Month of Invoice</label>
+      <select id="payRmbInvoiceMonth"></select>
+    </div>
+    <div class="input-wrap" id="payRmbInvNumWrap"><label>Invoice Number <small id="payRmbInvNumOptionalLabel" style="color:var(--muted);font-weight:600">optional</small></label><input type="text" id="payRmbInvNum" maxlength="60" /></div>
+
+    <div class="input-wrap"><label>Invoice <small style="color:#c00;font-weight:600">required</small></label>
+      <input type="file" id="payRmbInvFile" accept="image/*,application/pdf" onchange="onPaymentsFile('invoice', this)" />
+      <div id="payRmbInvStatus" class="pay-file-status"></div>
+    </div>
+    <div class="input-wrap"><label>Payment Screenshot <small style="color:#c00;font-weight:600">required</small></label>
+      <input type="file" id="payRmbScrFile" accept="image/*,application/pdf" onchange="onPaymentsFile('payment_screenshot', this)" />
+      <div id="payRmbScrStatus" class="pay-file-status"></div>
+    </div>
+  </div>
+
+  <!-- ─── Vendor Payment fields ─── -->
+  <div id="payFieldsVP" style="display:none">
+    <div class="input-wrap"><label>City</label><select id="payVpCitySelect"></select></div>
+    <div class="input-wrap"><label>Name of Vendor</label><input type="text" id="payVpVendor" maxlength="120" /></div>
+    <div class="input-wrap"><label>Service Provided</label><textarea id="payVpService" maxlength="300"></textarea></div>
+    <div class="input-wrap"><label>Invoice Number</label><input type="text" id="payVpInvNum" maxlength="60" /></div>
+    <div class="input-wrap"><label>Date of Activity</label><input type="date" id="payVpActivityDate" /></div>
+    <div class="input-wrap"><label>Month of Activity</label><select id="payVpMonth"></select></div>
+    <div class="input-wrap"><label>Total Amount (₹)</label><input type="number" id="payVpTotalAmount" min="0" step="0.01" /></div>
+    <div class="input-wrap"><label>Account Number</label><input type="text" id="payVpAccountNum" inputmode="numeric" maxlength="20" /></div>
+    <div class="input-wrap"><label>IFSC Code</label><input type="text" id="payVpIfsc" maxlength="11" /></div>
+
+    <div class="input-wrap"><label>Invoice <small style="color:#c00;font-weight:600">required</small></label>
+      <input type="file" id="payVpInvFile" accept="image/*,application/pdf" onchange="onPaymentsFile('invoice', this)" />
+      <div id="payVpInvStatus" class="pay-file-status"></div>
+    </div>
+    <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:#c00;font-weight:600">required</small></label>
+      <input type="file" id="payVpChequeFile" accept="image/*,application/pdf" onchange="onPaymentsFile('cancelled_cheque', this)" />
+      <div id="payVpChequeStatus" class="pay-file-status"></div>
+    </div>
+    <div class="input-wrap"><label>PAN Card <small style="color:#c00;font-weight:600">required</small></label>
+      <input type="file" id="payVpPanFile" accept="image/*,application/pdf" onchange="onPaymentsFile('pan_card', this)" />
+      <div id="payVpPanStatus" class="pay-file-status"></div>
+    </div>
+  </div>
+
+  <!-- ─── Promoter Payment fields ─── -->
+  <div id="payFieldsPP" style="display:none">
+    <div class="input-wrap"><label>City</label><select id="payPpCitySelect"></select></div>
+    <div class="input-wrap"><label>Invoice Date</label><input type="date" id="payPpInvoiceDate" /></div>
+    <div class="input-wrap"><label>Invoice Number</label><input type="text" id="payPpInvNum" maxlength="60" /></div>
+    <div class="input-wrap"><label>Number of Days Worked</label><input type="number" id="payPpDays" min="0" step="0.5" /></div>
+    <div class="input-wrap"><label>Cost per Day (₹)</label><input type="number" id="payPpCostPerDay" min="0" step="0.01" /></div>
+    <div class="input-wrap"><label>Total Amount (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payPpTotalAmount" readonly style="background:#f5f5f5" /></div>
+    <div class="input-wrap"><label>Bank Name</label><input type="text" id="payPpBankName" maxlength="80" /></div>
+    <div class="input-wrap"><label>Beneficiary Name (Promoter)</label><input type="text" id="payPpBenefName" maxlength="120" /></div>
+    <div class="input-wrap"><label>Account Number</label><input type="text" id="payPpAccountNum" inputmode="numeric" maxlength="20" /></div>
+    <div class="input-wrap"><label>IFSC Code</label><input type="text" id="payPpIfsc" maxlength="11" /></div>
+    <div class="input-wrap"><label>PAN Number</label><input type="text" id="payPpPanNum" maxlength="10" placeholder="e.g. ABCDE1234F" /></div>
+    <div class="input-wrap"><label>Month of Invoice</label><select id="payPpMonth"></select></div>
+
+    <div class="input-wrap"><label>Invoice <small style="color:#c00;font-weight:600">required</small></label>
+      <input type="file" id="payPpInvFile" accept="image/*,application/pdf" onchange="onPaymentsFile('invoice', this)" />
+      <div id="payPpInvStatus" class="pay-file-status"></div>
+    </div>
+    <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:#c00;font-weight:600">required</small></label>
+      <input type="file" id="payPpChequeFile" accept="image/*,application/pdf" onchange="onPaymentsFile('cancelled_cheque', this)" />
+      <div id="payPpChequeStatus" class="pay-file-status"></div>
+    </div>
+    <div class="input-wrap"><label>PAN Card <small style="color:#c00;font-weight:600">required</small></label>
+      <input type="file" id="payPpPanFile" accept="image/*,application/pdf" onchange="onPaymentsFile('pan_card', this)" />
+      <div id="payPpPanStatus" class="pay-file-status"></div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="paymentsSubmitBtn" onclick="submitPayment()">Submit</button>
+  <button class="btn btn-secondary" onclick="navigate('screen-payments-picker')">← Back</button>
+</div>
+
+<!-- Screen 3: Payments success -->
+<div class="screen" id="screen-payments-success">
+  <div class="success-card">
+    <div class="success-icon">✓</div>
+    <div class="big-title" style="font-size:24px">Submitted!</div>
+    <p style="color:var(--muted);font-size:14px;margin-top:8px;font-weight:600;">Your payment submission has been recorded.</p>
+    <div class="success-detail" id="paymentsSuccessDetail"></div>
+    <p style="color:var(--muted);font-size:12px;margin-top:12px;font-weight:600;">The finance team will review and process it.</p>
+  </div>
+  <button class="btn btn-primary" onclick="startPayments()">Submit Another</button>
+  <button class="btn btn-secondary" onclick="navigate('screen-home')">← Back to Home</button>
+</div>
+
+<!-- ════════════════ END PAYMENTS MODULE (v5.9) ════════════════ -->
+
+
 <!-- ════════════════ INVENTORY TOAST (v5.4) ════════════════ -->
 <div class="inv-toast" id="invToast"></div>
 
@@ -1755,6 +1993,14 @@ const CONFIG = {
   // v5.8 — Offline Branding module (7 tabs: Pole_Banner, Lift_Poster, Sunboard,
   // Society_Branding, Gazebo_Umbrella, Digital_Screen, OOH)
   BRANDING_SHEET_ID:         '1BHUw906mOhBTivhgTJnQd8_RaqakvDdHyiTiBROjCyI',
+  // v5.9 — Payments module (BTL finance team). PAYMENTS_SHEET_ID contains 5 data
+  // tabs (Society_Payments_Under_10k, Society_Payments_Over_10k, Reimbursements,
+  // Vendor_Payments, Promoter_Payments) + Payments_Config + Payments_Errors.
+  // SOCIETY_MASTER_SHEET_ID has one tab per city; each tab has
+  // society_name | nm_name | mm_name. Drive folder IDs live SERVER-SIDE only
+  // (in apps_script_v5.9.gs) — the client never needs them.
+  PAYMENTS_SHEET_ID:         '1XWEIGJC_3Xuam8k3JFh735EFniBJe-7kyme0-O3RItk',
+  SOCIETY_MASTER_SHEET_ID:   '1eXvwYpZA0yLkNDMv116RZ4rW0Xd736unLxB8QRkl3ng',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
@@ -1864,15 +2110,23 @@ let state = {
   brandingSubmissionType:   '',     // 'Execution' or 'Audit' (only for audit-pattern types)
   cityMmNmData:             [],     // [{city, mm, nm}] from Transfer_Tab — shared with branding cascading dropdowns
   cityMmNmLoaded:           false,
+  // v5.9 — Payments module
+  paymentsAccess:           [],     // array of sub-feature codes the user can access: ['SP10U','RMB',...]; ['ALL'] expanded to all 5
+  paymentsConfig:           null,   // { SP10U: {is_active, window_start, window_end, label}, ... } from Payments_Config tab
+  paymentsConfigLoaded:     false,
+  paymentsSubFeature:       '',     // currently selected sub-feature on the picker
+  societyMaster:            {},     // { cityLower: [{society_name, nm_name, mm_name}, ...] }
+  societyMasterLoaded:      {},     // { cityLower: true } — lazy-loaded per city
+  paymentsFiles:            {},     // { slotKey: {base64, mime, filename, size} } for the open form
 };
 
 
 // ─────────────────────────────────────────────────────────
 // SESSION
 // ─────────────────────────────────────────────────────────
-function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess) {
+function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess) {
   const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
-  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, expiry }));
+  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, expiry }));
 }
 function loadSession() {
   try {
@@ -2019,6 +2273,8 @@ async function loadCreds() {
     assignedCityIdx:h.findIndex(c => c.includes('assigned') && c.includes('city')),
     // v5.8 — Offline Branding access (column K — brandingAccess)
     brandingIdx:    h.findIndex(c => c.includes('branding')),
+    // v5.9 — Payments access (column T — payments access). Free-text, comma-separated codes.
+    paymentsIdx:    h.findIndex(c => c.includes('payments') && c.includes('access')),
   };
 }
 
@@ -2034,7 +2290,7 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx, brandingIdx } = await loadCreds();
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx, brandingIdx, paymentsIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
       String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
       String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
@@ -2060,12 +2316,14 @@ async function doLogin() {
     state.assignedCity             = assignedCityIdx >= 0 ? String(match[assignedCityIdx] || '').trim() : '';
     // v5.8 — Offline Branding access
     state.brandingAccess           = brandingIdx >= 0 ? toBoolean(match[brandingIdx]) : false;
+    // v5.9 — Payments access (parse comma-separated codes from column T)
+    state.paymentsAccess           = paymentsIdx >= 0 ? parsePaymentsAccess(match[paymentsIdx]) : [];
 
     // If user has leaderboard access but never onboarded AND has no name in column M,
     // force them through the one-time onboarding form before home.
     const needsOnboarding = state.leaderboardAccess && !state.onboarded && !state.displayName;
 
-    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess);
+    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess);
     if (needsOnboarding) {
       // Cache duplicates list for warning before they pick a code.
       state._allRefCodes = rows.slice(headerIdx + 1)
@@ -2102,7 +2360,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -2126,6 +2384,7 @@ function renderHomeCards() {
     { icon:'📝', title:'Request More Stock',  sub:'Ask Central Team for additional inventory', access: state.inventoryUpdateAccess, action:'openRequirementRequest()' },
     { icon:'✅', title:'Review Requests',     sub:'Approve, reject, or fulfil pending stock requests', access: state.inventoryUpdateAccess && isCentralForReview, action:'openRequirementReview()' },
     { icon:'🎨', title:'Offline Branding',    sub:'Log pole banners, posters, gazebos & more', access: state.brandingAccess, action:'startBranding()' },
+    { icon:'💸', title:'Payments',            sub:'Submit payments, reimbursements & vendor invoices', access: (state.paymentsAccess || []).length > 0, action:'startPayments()' },
   ];
   const accessible = cards.filter(c => c.access);
   const grid = document.getElementById('homeGrid');
@@ -3715,6 +3974,7 @@ window.addEventListener('load', () => {
     state.leaderboardAccess = session.leaderboardAccess || false;
     state.slotCheckerAccess = session.slotCheckerAccess || false;
     state.brandingAccess    = session.brandingAccess    || false;
+    state.paymentsAccess    = Array.isArray(session.paymentsAccess) ? session.paymentsAccess : [];
     onLoggedIn();
   }
 });
@@ -5537,6 +5797,881 @@ async function submitBranding() {
 // ═════════════════════════════════════════════════════════════
 // END OFFLINE BRANDING MODULE
 // ═════════════════════════════════════════════════════════════
+
+// ═════════════════════════════════════════════════════════════
+// PAYMENTS MODULE (v5.9)
+// ═════════════════════════════════════════════════════════════
+//
+// Three independent gates protect a submission:
+//   Gate 1 — Per-user access (column T of Login Credentials).
+//   Gate 2 — Global is_active toggle (Payments_Config tab).
+//   Gate 3 — Time window (Payments_Config tab; default 20:00→14:45 IST).
+//
+// Config (gates 2 + 3) is fetched via Apps Script doGet?action=getPaymentsConfig
+// at screen-open time and cached for the session. Backend re-validates on
+// submit so a stale form left open can't slip through.
+// ═════════════════════════════════════════════════════════════
+
+// All valid sub-feature codes (must match Apps Script PAYMENTS_ROUTES keys).
+const PAYMENTS_SUB_CODES = ['SP10U', 'SP10O', 'RMB', 'VP', 'PP'];
+
+// Display metadata for the picker tiles.
+const PAYMENTS_META = {
+  SP10U: { title: 'Society Payments < ₹10,000',     icon: '🏘️', sub: 'Permission cost under ten thousand for a society.' },
+  SP10O: { title: 'Society Payments > ₹10,000',     icon: '🏛️', sub: 'Permission cost above ten thousand for a society.' },
+  RMB:   { title: 'Reimbursement',                  icon: '🧾', sub: 'Reclaim out-of-pocket spend on goodies, logistics, etc.' },
+  VP:    { title: 'Vendor Payment',                 icon: '🤝', sub: 'Pay a vendor for services delivered.' },
+  PP:    { title: 'Promoter Payment',               icon: '🙋', sub: 'Pay a promoter based on days worked.' },
+};
+
+// Months list (used in dropdowns).
+const PAYMENTS_MONTHS = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+
+// Parse the Payments Access column from the credentials sheet.
+// Input may be 'ALL', 'SP10U,RMB', 'sp10u, rmb', '', undefined.
+// Output: array of canonical uppercase codes, e.g. ['SP10U','RMB'].
+function parsePaymentsAccess(raw) {
+  if (!raw) return [];
+  const s = String(raw).trim();
+  if (!s) return [];
+  if (s.toUpperCase() === 'ALL') return PAYMENTS_SUB_CODES.slice();
+  return s.split(',')
+    .map(x => x.trim().toUpperCase())
+    .filter(x => PAYMENTS_SUB_CODES.indexOf(x) >= 0);
+}
+
+// Entry point — wired to the Payments home tile.
+async function startPayments() {
+  // Hard guard: user with no access shouldn't reach this, but check defensively.
+  if (!state.paymentsAccess || state.paymentsAccess.length === 0) {
+    _invToast('You don\'t have access to Payments. Contact your admin.', 'error');
+    return;
+  }
+
+  navigate('screen-payments-picker');
+
+  // Always refresh config when entering the screen (cheap call, ensures any
+  // toggle change by admin takes effect within one screen-open).
+  try {
+    await loadPaymentsConfig();
+  } catch (e) {
+    showError('paymentsWindowBanner', 'Could not check submission status. Please retry.');
+    document.getElementById('paymentsWindowBanner').style.display = 'block';
+  }
+  renderPaymentsPicker();
+}
+
+// Fetch /exec?action=getPaymentsConfig and cache the result on state.paymentsConfig.
+async function loadPaymentsConfig() {
+  // Apps Script doGet returns JSON with Access-Control-Allow-Origin: *
+  // when deployed as "Anyone, even anonymous", so a plain fetch works.
+  const url = CONFIG.APPS_SCRIPT_URL + '?action=getPaymentsConfig';
+  const res = await fetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error('CONFIG_HTTP_' + res.status);
+  const data = await res.json();
+  if (!data || !data.ok) throw new Error('CONFIG_NOT_OK');
+  state.paymentsConfig = data.sub_features || {};
+  state.paymentsConfigServerNow = data.server_time_iso || '';
+  state.paymentsConfigLoaded = true;
+  return data;
+}
+
+// Render the picker tiles for sub-features the user has access to.
+// Tiles for currently-inactive sub-features are dimmed and tap shows a notice.
+function renderPaymentsPicker() {
+  const grid = document.getElementById('paymentsPickerGrid');
+  const access = state.paymentsAccess || [];
+  const cfg = state.paymentsConfig || {};
+
+  // Global banner if window is closed for ALL accessible sub-features.
+  const banner = document.getElementById('paymentsWindowBanner');
+  const allClosed = access.length > 0 && access.every(code => !_isSubFeatureSubmittable(code, cfg));
+  if (allClosed && state.paymentsConfigLoaded) {
+    const sample = cfg[access[0]];
+    const wStart = sample && sample.window_start ? sample.window_start : '20:00';
+    const wEnd   = sample && sample.window_end   ? sample.window_end   : '14:45';
+    banner.innerHTML = `<b>Submissions are currently closed.</b><br>Window: ${wStart} – ${wEnd} IST (next day). Please come back during the window.`;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+
+  grid.innerHTML = access.map(code => {
+    const m = PAYMENTS_META[code];
+    if (!m) return '';
+    const submittable = _isSubFeatureSubmittable(code, cfg);
+    const sub = submittable ? m.sub : _closedReason(code, cfg);
+    const dim = submittable ? '' : 'opacity:0.55;';
+    const clickHandler = submittable
+      ? `onclick="openPaymentsForm('${code}')"`
+      : `onclick="_invToast('${_closedReason(code, cfg).replace(/'/g, "\\'")}','error')"`;
+    return `
+      <div class="option-card" ${clickHandler} style="${dim}">
+        <div class="option-card-icon">${m.icon}</div>
+        <div class="option-card-body">
+          <div class="option-card-title">${m.title}</div>
+          <div class="option-card-sub">${sub}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// True if a sub-feature can currently accept submissions: is_active + within window.
+function _isSubFeatureSubmittable(code, cfg) {
+  if (!state.paymentsConfigLoaded) return false;   // safer to assume closed than open
+  const sf = cfg[code];
+  if (!sf) return false;
+  if (!sf.is_active) return false;
+  return _isWithinWindow(sf.window_start, sf.window_end);
+}
+
+function _closedReason(code, cfg) {
+  if (!state.paymentsConfigLoaded) return 'Checking status…';
+  const sf = cfg[code];
+  if (!sf) return 'Not configured yet — contact admin.';
+  if (!sf.is_active) return 'Disabled by admin right now.';
+  return `Window: ${sf.window_start || '?'} – ${sf.window_end || '?'} IST.`;
+}
+
+// Window check, IST. Returns true if "now" falls inside [start..end], with
+// wrap-around support for windows that cross midnight (e.g. 20:00→14:45).
+function _isWithinWindow(startStr, endStr) {
+  if (!startStr || !endStr) return false;
+  const sParts = String(startStr).split(':');
+  const eParts = String(endStr).split(':');
+  const startM = parseInt(sParts[0],10) * 60 + parseInt(sParts[1],10);
+  const endM   = parseInt(eParts[0],10) * 60 + parseInt(eParts[1],10);
+  if (isNaN(startM) || isNaN(endM)) return false;
+  const nowM = _minutesInIstClient();
+  if (startM === endM) return false;
+  if (startM < endM) {
+    return nowM >= startM && nowM <= endM;
+  } else {
+    // Wrap-around window
+    return nowM >= startM || nowM <= endM;
+  }
+}
+
+// "Now" minutes since midnight in IST. Uses Intl to avoid TZ issues on
+// user's device (laptops set to other zones, browser sandbox, etc).
+function _minutesInIstClient() {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(new Date());
+    let h = 0, m = 0;
+    for (const p of parts) {
+      if (p.type === 'hour')   h = parseInt(p.value, 10);
+      if (p.type === 'minute') m = parseInt(p.value, 10);
+    }
+    return h * 60 + m;
+  } catch (e) {
+    // Fallback: assume browser local time = IST (most users are in India)
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  }
+}
+
+// Open the form for a chosen sub-feature, configuring fields shown/hidden.
+async function openPaymentsForm(code) {
+  if (PAYMENTS_SUB_CODES.indexOf(code) < 0) return;
+  state.paymentsSubFeature = code;
+  state.paymentsFiles = {};   // reset attached files
+
+  // Final check before showing the form (avoids opening then immediate close).
+  if (!_isSubFeatureSubmittable(code, state.paymentsConfig || {})) {
+    _invToast(_closedReason(code, state.paymentsConfig || {}), 'error');
+    return;
+  }
+
+  // Set the title and which field section to show.
+  document.getElementById('paymentsFormTitle').textContent = PAYMENTS_META[code].title;
+  document.getElementById('paymentsFormSub').textContent =
+    code === 'RMB' && false ? '' :
+    'Fill in all fields. Optional fields are marked.';
+  hideMsg('paymentsError');
+  hideMsg('paymentsClosedBanner');
+
+  // Hide all field groups, show only the one for this sub-feature.
+  document.getElementById('payFieldsSociety').style.display = (code === 'SP10U' || code === 'SP10O') ? '' : 'none';
+  document.getElementById('payFieldsRMB').style.display     = (code === 'RMB') ? '' : 'none';
+  document.getElementById('payFieldsVP').style.display      = (code === 'VP')  ? '' : 'none';
+  document.getElementById('payFieldsPP').style.display      = (code === 'PP')  ? '' : 'none';
+
+  // Reset all form values before navigation (idempotent across re-opens).
+  _resetPaymentsForms();
+
+  // Populate dropdowns specific to this sub-feature.
+  if (code === 'SP10U' || code === 'SP10O') {
+    await _populateSocietyDropdowns();
+  } else if (code === 'RMB') {
+    _populateMonthSelect('payRmbInvoiceMonth');
+    onRmbTypeChange();      // sets invoice-number required/optional
+  } else if (code === 'VP') {
+    _populateCitySelectFromMaster('payVpCitySelect');
+    _populateMonthSelect('payVpMonth');
+  } else if (code === 'PP') {
+    _populateCitySelectFromMaster('payPpCitySelect');
+    _populateMonthSelect('payPpMonth');
+  }
+
+  // Wire auto-calc listeners (idempotent — addEventListener with same handler
+  // is a no-op when re-added).
+  _wireAutoCalc();
+
+  navigate('screen-payments-form');
+}
+
+function _resetPaymentsForms() {
+  // Clear values on every input/textarea/select inside the form screen so
+  // re-opening doesn't leak stale data.
+  const screen = document.getElementById('screen-payments-form');
+  const els = screen.querySelectorAll('input, select, textarea');
+  for (const el of els) {
+    if (el.type === 'file') { el.value = ''; continue; }
+    if (el.tagName === 'SELECT') { el.selectedIndex = 0; continue; }
+    el.value = '';
+  }
+  // Hide "Society — Others (type)" wrap.
+  const otherWrap = document.getElementById('paySocietyOtherWrap');
+  if (otherWrap) otherWrap.style.display = 'none';
+  // Clear file status messages.
+  ['payChequeStatus','payPanStatus','payRmbInvStatus','payRmbScrStatus',
+   'payVpInvStatus','payVpChequeStatus','payVpPanStatus',
+   'payPpInvStatus','payPpChequeStatus','payPpPanStatus'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = ''; el.className = 'pay-file-status'; }
+  });
+}
+
+function _populateMonthSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select month…</option>' +
+    PAYMENTS_MONTHS.map(m => `<option value="${m}">${m}</option>`).join('');
+}
+
+// ─── Society Master (City → MM → NM → Society) loader ───
+// Each city has its own tab in SOCIETY_MASTER_SHEET_ID. We lazy-load per
+// city when the user picks it (avoids loading 10 tabs upfront).
+
+// Get the list of city tab names from the master sheet. Cached on state.
+async function _loadSocietyMasterCities() {
+  if (state._societyMasterCitiesLoaded) return state._societyMasterCities || [];
+  // gviz returns sheet metadata; we use the "list all sheets" approach via the
+  // export endpoint with a missing gid (it errors with a list of valid gids).
+  // Simpler: try fetching the first city tab name from a known place — but
+  // since cities are dynamic, the cleanest reliable approach is to use the
+  // Sheets export?format=xlsx ... too heavy.
+  //
+  // Pragmatic compromise: ship a static city list (matches the 10 city tabs
+  // the admin created). If the admin adds an 11th, they update CITY_LIST.
+  // This avoids needing an extra Apps Script roundtrip on screen-open.
+  state._societyMasterCities = PAYMENTS_CITY_LIST.slice();
+  state._societyMasterCitiesLoaded = true;
+  return state._societyMasterCities;
+}
+
+// Lowercase city → loaded? Lazy-loaded data lives on state.societyMaster[cityLower].
+async function _loadSocietiesForCity(cityLower) {
+  if (state.societyMasterLoaded[cityLower]) return state.societyMaster[cityLower] || [];
+  // The tab name in the master sheet matches the city EXACTLY as listed in
+  // PAYMENTS_CITY_LIST (lowercase, with spaces like "navi mumbai").
+  const tabName = cityLower;
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SOCIETY_MASTER_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
+  try {
+    const res = await fetch(url);
+    const txt = await res.text();
+    if (txt.trim().startsWith('<!DOCTYPE') || txt.trim().startsWith('<html')) {
+      throw new Error('SHEET_ACCESS_DENIED');
+    }
+    const rows = parseCSV(txt);
+    // First row = headers: society_name | nm_name | mm_name
+    const data = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r) continue;
+      const society = String(r[0] || '').trim();
+      const nm      = String(r[1] || '').trim();
+      const mm      = String(r[2] || '').trim();
+      if (!mm && !nm) continue;  // skip totally empty rows
+      data.push({ society_name: society, nm_name: nm, mm_name: mm });
+    }
+    state.societyMaster[cityLower] = data;
+    state.societyMasterLoaded[cityLower] = true;
+    return data;
+  } catch (e) {
+    state.societyMaster[cityLower] = [];
+    state.societyMasterLoaded[cityLower] = true;
+    return [];
+  }
+}
+
+async function _populateSocietyDropdowns() {
+  // Cities first (from static list — kept in sync with the master sheet tabs).
+  const cities = await _loadSocietyMasterCities();
+  const sel = document.getElementById('payCitySelect');
+  sel.innerHTML = '<option value="">Select city…</option>' +
+    cities.map(c => `<option value="${c}">${titleCaseCity(c)}</option>`).join('');
+  sel.onchange = onPaymentsCityChange;
+
+  // MM/NM/Society dropdowns start disabled.
+  const mm = document.getElementById('payMmSelect');
+  const nm = document.getElementById('payNmSelect');
+  const so = document.getElementById('paySocietySelect');
+  mm.innerHTML = '<option value="">Select MM…</option>'; mm.disabled = true;
+  nm.innerHTML = '<option value="">Select NM…</option>'; nm.disabled = true;
+  so.innerHTML = '<option value="">Select society…</option>'; so.disabled = true;
+  mm.onchange = onPaymentsMmChange;
+  nm.onchange = onPaymentsNmChange;
+  so.onchange = onPaymentsSocietyChange;
+}
+
+function _populateCitySelectFromMaster(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Select city…</option>' +
+    PAYMENTS_CITY_LIST.map(c => `<option value="${c}">${titleCaseCity(c)}</option>`).join('');
+}
+
+async function onPaymentsCityChange() {
+  const city = document.getElementById('payCitySelect').value.trim().toLowerCase();
+  const mm = document.getElementById('payMmSelect');
+  const nm = document.getElementById('payNmSelect');
+  const so = document.getElementById('paySocietySelect');
+  mm.innerHTML = '<option value="">Select MM…</option>';
+  nm.innerHTML = '<option value="">Select NM…</option>';
+  so.innerHTML = '<option value="">Select society…</option>';
+  mm.disabled = true; nm.disabled = true; so.disabled = true;
+  document.getElementById('paySocietyOtherWrap').style.display = 'none';
+  if (!city) return;
+
+  const rows = await _loadSocietiesForCity(city);
+  // DISTINCT MMs in this city
+  const mmSet = new Set();
+  for (const r of rows) if (r.mm_name) mmSet.add(r.mm_name);
+  const mms = Array.from(mmSet).sort((a,b) => a.localeCompare(b));
+  mm.innerHTML = '<option value="">Select MM…</option>' +
+    mms.map(m => `<option value="${m}">${m}</option>`).join('');
+  mm.disabled = mms.length === 0;
+}
+
+function onPaymentsMmChange() {
+  const city = document.getElementById('payCitySelect').value.trim().toLowerCase();
+  const selectedMm = document.getElementById('payMmSelect').value.trim();
+  const nm = document.getElementById('payNmSelect');
+  const so = document.getElementById('paySocietySelect');
+  nm.innerHTML = '<option value="">Select NM…</option>';
+  so.innerHTML = '<option value="">Select society…</option>';
+  nm.disabled = true; so.disabled = true;
+  document.getElementById('paySocietyOtherWrap').style.display = 'none';
+  if (!selectedMm) return;
+
+  const rows = state.societyMaster[city] || [];
+  const nmSet = new Set();
+  for (const r of rows) {
+    if (r.mm_name === selectedMm && r.nm_name) nmSet.add(r.nm_name);
+  }
+  const nms = Array.from(nmSet).sort((a,b) => a.localeCompare(b));
+  nm.innerHTML = '<option value="">Select NM…</option>' +
+    nms.map(n => `<option value="${n}">${n}</option>`).join('');
+  nm.disabled = nms.length === 0;
+}
+
+function onPaymentsNmChange() {
+  const city = document.getElementById('payCitySelect').value.trim().toLowerCase();
+  const selectedMm = document.getElementById('payMmSelect').value.trim();
+  const selectedNm = document.getElementById('payNmSelect').value.trim();
+  const so = document.getElementById('paySocietySelect');
+  so.innerHTML = '<option value="">Select society…</option>';
+  so.disabled = true;
+  document.getElementById('paySocietyOtherWrap').style.display = 'none';
+  if (!selectedNm) return;
+
+  const rows = state.societyMaster[city] || [];
+  const socSet = new Set();
+  for (const r of rows) {
+    if (r.mm_name === selectedMm && r.nm_name === selectedNm && r.society_name) {
+      socSet.add(r.society_name);
+    }
+  }
+  const socs = Array.from(socSet).sort((a,b) => a.localeCompare(b));
+  // Always include "Others" at the bottom — even when there are real societies.
+  const opts = ['<option value="">Select society…</option>']
+    .concat(socs.map(s => `<option value="${s}">${s}</option>`))
+    .concat(['<option value="__OTHER__">Others (type below)</option>']);
+  so.innerHTML = opts.join('');
+  so.disabled = false;
+}
+
+function onPaymentsSocietyChange() {
+  const so = document.getElementById('paySocietySelect');
+  const otherWrap = document.getElementById('paySocietyOtherWrap');
+  if (so.value === '__OTHER__') {
+    otherWrap.style.display = '';
+    document.getElementById('paySocietyOther').focus();
+  } else {
+    otherWrap.style.display = 'none';
+    document.getElementById('paySocietyOther').value = '';
+  }
+}
+
+// Reimbursement type change: invoice_number is required only when type === 'Society payment'.
+function onRmbTypeChange() {
+  const t = document.getElementById('payRmbType').value.trim();
+  const required = (t === 'Society payment');
+  const label = document.getElementById('payRmbInvNumOptionalLabel');
+  if (label) {
+    label.textContent = required ? 'required' : 'optional';
+    label.style.color = required ? '#c00' : '';
+  }
+}
+
+// ─── Auto-calc wiring ───
+let _payAutoCalcWired = false;
+function _wireAutoCalc() {
+  if (_payAutoCalcWired) return;   // attach once; listeners are global
+  _payAutoCalcWired = true;
+
+  // Society payments: total_permission_cost = permission_cost + gst_amount
+  const onSocietyChange = () => {
+    const a = parseFloat(document.getElementById('payPermCost').value) || 0;
+    const b = parseFloat(document.getElementById('payGstAmt').value) || 0;
+    document.getElementById('payTotalPermCost').value = (Math.round((a + b) * 100) / 100);
+  };
+  ['payPermCost','payGstAmt'].forEach(id => {
+    document.getElementById(id).addEventListener('input', onSocietyChange);
+  });
+
+  // Reimbursement: total_cost = cost + gst
+  const onRmbChange = () => {
+    const a = parseFloat(document.getElementById('payRmbCost').value) || 0;
+    const b = parseFloat(document.getElementById('payRmbGst').value) || 0;
+    document.getElementById('payRmbTotalCost').value = (Math.round((a + b) * 100) / 100);
+  };
+  ['payRmbCost','payRmbGst'].forEach(id => {
+    document.getElementById(id).addEventListener('input', onRmbChange);
+  });
+
+  // Promoter: total_amount = days × cost_per_day
+  const onPpChange = () => {
+    const a = parseFloat(document.getElementById('payPpDays').value) || 0;
+    const b = parseFloat(document.getElementById('payPpCostPerDay').value) || 0;
+    document.getElementById('payPpTotalAmount').value = (Math.round(a * b * 100) / 100);
+  };
+  ['payPpDays','payPpCostPerDay'].forEach(id => {
+    document.getElementById(id).addEventListener('input', onPpChange);
+  });
+}
+
+// ─── File upload handling ───
+// Accepts image/* and application/pdf. Images get downscaled + recompressed.
+// PDFs and other files are passed through as-is. Cap: ~5MB after compression.
+const PAYMENTS_MAX_FILE_BYTES = 5 * 1024 * 1024;   // 5 MB
+const PAYMENTS_IMG_MAX_DIM    = 1600;              // px
+const PAYMENTS_IMG_QUALITY    = 0.75;              // JPEG quality
+
+async function onPaymentsFile(slotKey, inputEl) {
+  // slotKey is one of: cancelled_cheque | pan_card | invoice | payment_screenshot
+  const statusId = _slotStatusId(slotKey);
+  const statusEl = document.getElementById(statusId);
+  const file = inputEl.files && inputEl.files[0];
+  if (!file) {
+    delete state.paymentsFiles[slotKey];
+    if (statusEl) { statusEl.textContent = ''; statusEl.className = 'pay-file-status'; }
+    return;
+  }
+  if (statusEl) { statusEl.textContent = 'Processing…'; statusEl.className = 'pay-file-status'; }
+
+  try {
+    let blob = file;
+    let mime = file.type || 'application/octet-stream';
+
+    // Compress images. Leave PDFs etc as-is.
+    if (mime.indexOf('image/') === 0) {
+      try {
+        blob = await _compressImage(file, PAYMENTS_IMG_MAX_DIM, PAYMENTS_IMG_QUALITY);
+        mime = 'image/jpeg';
+      } catch (e) {
+        // Fall through with original
+      }
+    }
+
+    if (blob.size > PAYMENTS_MAX_FILE_BYTES) {
+      if (statusEl) {
+        statusEl.textContent = `Too large (${(blob.size/1024/1024).toFixed(1)} MB). Max 5 MB. Please pick a smaller file.`;
+        statusEl.className = 'pay-file-status err';
+      }
+      delete state.paymentsFiles[slotKey];
+      inputEl.value = '';
+      return;
+    }
+
+    const base64 = await _blobToBase64(blob);
+    state.paymentsFiles[slotKey] = {
+      base64: base64,
+      mime: mime,
+      filename: file.name,
+      size: blob.size
+    };
+    if (statusEl) {
+      statusEl.textContent = `✓ Attached · ${file.name} · ${(blob.size/1024).toFixed(0)} KB`;
+      statusEl.className = 'pay-file-status ok';
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.textContent = 'Could not process the file. Try a different one.';
+      statusEl.className = 'pay-file-status err';
+    }
+    delete state.paymentsFiles[slotKey];
+    inputEl.value = '';
+  }
+}
+
+function _slotStatusId(slotKey) {
+  // Resolve the status element for a given slot in the currently-active form.
+  // Each sub-feature has different DOM IDs for the same slot type.
+  const code = state.paymentsSubFeature;
+  const map = {
+    SP10U: { cancelled_cheque: 'payChequeStatus', pan_card: 'payPanStatus' },
+    SP10O: { cancelled_cheque: 'payChequeStatus', pan_card: 'payPanStatus' },
+    RMB:   { invoice: 'payRmbInvStatus', payment_screenshot: 'payRmbScrStatus' },
+    VP:    { invoice: 'payVpInvStatus', cancelled_cheque: 'payVpChequeStatus', pan_card: 'payVpPanStatus' },
+    PP:    { invoice: 'payPpInvStatus', cancelled_cheque: 'payPpChequeStatus', pan_card: 'payPpPanStatus' },
+  };
+  return (map[code] && map[code][slotKey]) || '';
+}
+
+function _compressImage(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('READ_ERROR'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('IMG_DECODE_ERROR'));
+      img.onload = () => {
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (Math.max(w, h) > maxDim) {
+          if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+          else        { w = Math.round(w * maxDim / h); h = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);     // white bg (handles PNG transparency)
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(blob => {
+          if (!blob) reject(new Error('TOBLOB_FAILED'));
+          else resolve(blob);
+        }, 'image/jpeg', quality);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function _blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('B64_ERROR'));
+    reader.onload = () => {
+      const s = reader.result || '';
+      const comma = s.indexOf(',');
+      resolve(comma >= 0 ? s.substring(comma + 1) : s);
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+// ─── Submit handler ───
+async function submitPayment() {
+  hideMsg('paymentsError');
+
+  const code = state.paymentsSubFeature;
+  if (!PAYMENTS_SUB_CODES.includes(code)) {
+    showError('paymentsError', 'Please pick a payment type first.'); return;
+  }
+
+  // Last-chance window check (UX only; backend re-validates).
+  if (!_isSubFeatureSubmittable(code, state.paymentsConfig || {})) {
+    showError('paymentsError', _closedReason(code, state.paymentsConfig || {}));
+    return;
+  }
+
+  // Build payload + validate. Returns { payload, error }.
+  const built = _buildPaymentsPayload(code);
+  if (built.error) {
+    showError('paymentsError', built.error);
+    return;
+  }
+  const payload = built.payload;
+
+  const btn = document.getElementById('paymentsSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try {
+    await postToScript(payload);
+    // Show success
+    const meta = PAYMENTS_META[code];
+    const parts = [`<b>${meta.title}</b>`, `Submission ID: ${payload.submission_id}`];
+    document.getElementById('paymentsSuccessDetail').innerHTML = parts.join('<br>');
+    navigate('screen-payments-success');
+  } catch (e) {
+    showError('paymentsError', 'Could not submit. Please check your connection and retry.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Submit';
+  }
+}
+
+// Build the payload for the given sub-feature. Performs all client-side
+// validation. Returns { payload, error } — exactly one is set.
+function _buildPaymentsPayload(code) {
+  const submissionId = `${code}-${Date.now()}-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
+  const base = {
+    action:        'submitPayment',
+    sub_feature:   code,
+    submission_id: submissionId,
+    agent_code:    state.agentCode,
+    agent_name:    state.agentName,
+  };
+
+  if (code === 'SP10U' || code === 'SP10O') {
+    const city = document.getElementById('payCitySelect').value.trim().toLowerCase();
+    const mm   = document.getElementById('payMmSelect').value.trim();
+    const nm   = document.getElementById('payNmSelect').value.trim();
+    const soSel = document.getElementById('paySocietySelect').value.trim();
+    const soOther = document.getElementById('paySocietyOther').value.trim();
+    const isOther = (soSel === '__OTHER__');
+    const society = isOther ? soOther : soSel;
+
+    if (!city || !mm || !nm) return { error: 'Please select City, MM, and NM.' };
+    if (!society) return { error: isOther ? 'Please type the society/activity name.' : 'Please select a society.' };
+
+    const permCost = _payParseNum(document.getElementById('payPermCost').value);
+    const gstAmt   = _payParseNum(document.getElementById('payGstAmt').value);
+    if (permCost === null || permCost < 0) return { error: 'Permission Cost is required.' };
+    if (gstAmt   === null || gstAmt   < 0) return { error: 'GST Amount is required (enter 0 if none).' };
+
+    const flatCount = _payParseInt(document.getElementById('payFlatCount').value);
+    if (flatCount === null || flatCount < 0) return { error: 'Flat Count is required (enter 0 for market activity).' };
+
+    const benefName = document.getElementById('payBenefName').value.trim();
+    const benefDesig = document.getElementById('payBenefDesig').value.trim();
+    const actDate = document.getElementById('payActivityDate').value;
+    const actDetail = document.getElementById('payActivityDetail').value.trim();
+    const actType = document.getElementById('payActivityType').value.trim();
+    const d2d = document.getElementById('payD2D').value.trim();
+    const payType = document.getElementById('payPaymentType').value.trim();
+    const acctNum = document.getElementById('payAccountNum').value.trim();
+    const ifsc = document.getElementById('payIfsc').value.trim();
+    const spocName = document.getElementById('paySpocName').value.trim();
+    const spocNum = document.getElementById('paySpocNum').value.trim();
+    const gstNum = document.getElementById('payGstNum').value.trim();
+
+    if (!benefName)  return { error: 'Beneficiary Name is required.' };
+    if (!benefDesig) return { error: 'Beneficiary Designation is required.' };
+    if (!actDate)    return { error: 'Date of Activity is required.' };
+    if (!actDetail)  return { error: 'Detail of Activity is required.' };
+    if (!actType)    return { error: 'Type of Activity is required.' };
+    if (!d2d)        return { error: 'D2D is required.' };
+    if (!payType)    return { error: 'Payment Type is required.' };
+    if (!acctNum)    return { error: 'Account Number is required.' };
+    if (!ifsc)       return { error: 'IFSC Code is required.' };
+    if (!spocName)   return { error: 'Society SPOC Name is required.' };
+    if (!spocNum)    return { error: 'Society SPOC Number is required.' };
+
+    if (!state.paymentsFiles['cancelled_cheque']) {
+      return { error: 'Please attach the Cancelled Cheque / Passbook image.' };
+    }
+
+    const payload = Object.assign({}, base, {
+      city, mm_name: mm, nm_name: nm,
+      society_name: society,
+      is_other_society: isOther,
+      permission_cost: permCost,
+      gst_amount: gstAmt,
+      total_permission_cost: Math.round((permCost + gstAmt) * 100) / 100,
+      gst_number: gstNum,
+      flat_count: flatCount,
+      beneficiary_name: benefName,
+      beneficiary_designation: benefDesig,
+      activity_date: actDate,
+      activity_detail: actDetail,
+      activity_type: actType,
+      d2d: d2d,
+      payment_type: payType,
+      account_number: acctNum,
+      ifsc_code: ifsc,
+      spoc_name: spocName,
+      spoc_number: spocNum,
+    });
+    _attachFiles(payload, ['cancelled_cheque', 'pan_card']);
+    return { payload };
+  }
+
+  if (code === 'RMB') {
+    const actDate = document.getElementById('payRmbActivityDate').value;
+    const rType   = document.getElementById('payRmbType').value.trim();
+    const cost    = _payParseNum(document.getElementById('payRmbCost').value);
+    const gst     = _payParseNum(document.getElementById('payRmbGst').value);
+    const actDetail = document.getElementById('payRmbActivityDetail').value.trim();
+    const benefName = document.getElementById('payRmbBenefName').value.trim();
+    const acctNum   = document.getElementById('payRmbAccountNum').value.trim();
+    const ifsc      = document.getElementById('payRmbIfsc').value.trim();
+    const invMonth  = document.getElementById('payRmbInvoiceMonth').value.trim();
+    const invNum    = document.getElementById('payRmbInvNum').value.trim();
+
+    if (!actDate)   return { error: 'Activity Date is required.' };
+    if (!rType)     return { error: 'Type of Reimbursement is required.' };
+    if (cost === null || cost < 0) return { error: 'Cost is required.' };
+    if (gst  === null || gst  < 0) return { error: 'GST is required (enter 0 if none).' };
+    if (!actDetail) return { error: 'Detail of Activity is required.' };
+    if (!benefName) return { error: 'Beneficiary Name is required.' };
+    if (!acctNum)   return { error: 'Account Number is required.' };
+    if (!ifsc)      return { error: 'IFSC Code is required.' };
+    if (!invMonth)  return { error: 'Month of Invoice is required.' };
+
+    // Conditionally required: invoice_number when reimbursement_type is Society payment
+    if (rType === 'Society payment' && !invNum) {
+      return { error: 'Invoice Number is required for Society payment reimbursements.' };
+    }
+
+    if (!state.paymentsFiles['invoice'])           return { error: 'Please attach the Invoice.' };
+    if (!state.paymentsFiles['payment_screenshot']) return { error: 'Please attach the Payment Screenshot.' };
+
+    const payload = Object.assign({}, base, {
+      activity_date: actDate,
+      reimbursement_type: rType,
+      cost: cost,
+      gst: gst,
+      total_cost: Math.round((cost + gst) * 100) / 100,
+      activity_detail: actDetail,
+      beneficiary_name: benefName,
+      account_number: acctNum,
+      ifsc_code: ifsc,
+      invoice_month: invMonth,
+      invoice_number: invNum,
+    });
+    _attachFiles(payload, ['invoice', 'payment_screenshot']);
+    return { payload };
+  }
+
+  if (code === 'VP') {
+    const city      = document.getElementById('payVpCitySelect').value.trim().toLowerCase();
+    const vendor    = document.getElementById('payVpVendor').value.trim();
+    const service   = document.getElementById('payVpService').value.trim();
+    const invNum    = document.getElementById('payVpInvNum').value.trim();
+    const actDate   = document.getElementById('payVpActivityDate').value;
+    const actMonth  = document.getElementById('payVpMonth').value.trim();
+    const total     = _payParseNum(document.getElementById('payVpTotalAmount').value);
+    const acctNum   = document.getElementById('payVpAccountNum').value.trim();
+    const ifsc      = document.getElementById('payVpIfsc').value.trim();
+
+    if (!city)    return { error: 'City is required.' };
+    if (!vendor)  return { error: 'Vendor Name is required.' };
+    if (!service) return { error: 'Service Provided is required.' };
+    if (!invNum)  return { error: 'Invoice Number is required.' };
+    if (!actDate) return { error: 'Date of Activity is required.' };
+    if (!actMonth) return { error: 'Month of Activity is required.' };
+    if (total === null || total <= 0) return { error: 'Total Amount is required.' };
+    if (!acctNum) return { error: 'Account Number is required.' };
+    if (!ifsc)    return { error: 'IFSC Code is required.' };
+
+    if (!state.paymentsFiles['invoice'])          return { error: 'Please attach the Invoice.' };
+    if (!state.paymentsFiles['cancelled_cheque']) return { error: 'Please attach the Cancelled Cheque / Passbook.' };
+    if (!state.paymentsFiles['pan_card'])         return { error: 'Please attach the PAN Card.' };
+
+    const payload = Object.assign({}, base, {
+      city, vendor_name: vendor, service_provided: service,
+      invoice_number: invNum, activity_date: actDate, activity_month: actMonth,
+      total_amount: total, account_number: acctNum, ifsc_code: ifsc,
+    });
+    _attachFiles(payload, ['invoice', 'cancelled_cheque', 'pan_card']);
+    return { payload };
+  }
+
+  if (code === 'PP') {
+    const city       = document.getElementById('payPpCitySelect').value.trim().toLowerCase();
+    const invDate    = document.getElementById('payPpInvoiceDate').value;
+    const invNum     = document.getElementById('payPpInvNum').value.trim();
+    const days       = _payParseNum(document.getElementById('payPpDays').value);
+    const costPerDay = _payParseNum(document.getElementById('payPpCostPerDay').value);
+    const bankName   = document.getElementById('payPpBankName').value.trim();
+    const benefName  = document.getElementById('payPpBenefName').value.trim();
+    const acctNum    = document.getElementById('payPpAccountNum').value.trim();
+    const ifsc       = document.getElementById('payPpIfsc').value.trim();
+    const panNum     = document.getElementById('payPpPanNum').value.trim();
+    const invMonth   = document.getElementById('payPpMonth').value.trim();
+
+    if (!city)       return { error: 'City is required.' };
+    if (!invDate)    return { error: 'Invoice Date is required.' };
+    if (!invNum)     return { error: 'Invoice Number is required.' };
+    if (days === null || days <= 0)              return { error: 'Number of Days Worked is required.' };
+    if (costPerDay === null || costPerDay <= 0)  return { error: 'Cost per Day is required.' };
+    if (!bankName)   return { error: 'Bank Name is required.' };
+    if (!benefName)  return { error: 'Beneficiary Name (Promoter) is required.' };
+    if (!acctNum)    return { error: 'Account Number is required.' };
+    if (!ifsc)       return { error: 'IFSC Code is required.' };
+    if (!panNum)     return { error: 'PAN Number is required.' };
+    if (!invMonth)   return { error: 'Month of Invoice is required.' };
+
+    if (!state.paymentsFiles['invoice'])          return { error: 'Please attach the Invoice.' };
+    if (!state.paymentsFiles['cancelled_cheque']) return { error: 'Please attach the Cancelled Cheque / Passbook.' };
+    if (!state.paymentsFiles['pan_card'])         return { error: 'Please attach the PAN Card.' };
+
+    const payload = Object.assign({}, base, {
+      city, invoice_date: invDate, invoice_number: invNum,
+      days_worked: days, cost_per_day: costPerDay,
+      total_amount: Math.round(days * costPerDay * 100) / 100,
+      bank_name: bankName, beneficiary_name: benefName,
+      account_number: acctNum, ifsc_code: ifsc,
+      pan_number: panNum, invoice_month: invMonth,
+    });
+    _attachFiles(payload, ['invoice', 'cancelled_cheque', 'pan_card']);
+    return { payload };
+  }
+
+  return { error: 'Unknown sub-feature.' };
+}
+
+function _attachFiles(payload, slotKeys) {
+  for (const k of slotKeys) {
+    const f = state.paymentsFiles[k];
+    if (!f) continue;
+    payload[k + '_base64']   = f.base64;
+    payload[k + '_mime']     = f.mime;
+    payload[k + '_filename'] = (payload.submission_id || 'PAYMENT') + '_' + (f.filename || (k + '.bin'));
+  }
+}
+
+// Parsers — accept blanks as null, never NaN.
+function _payParseNum(v) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+function _payParseInt(v) {
+  const n = _payParseNum(v);
+  if (n === null) return null;
+  return Math.round(n);
+}
+
+// The list of city tab names in SOCIETY_MASTER_SHEET_ID. KEEP IN SYNC with
+// the actual tabs if cities are added/removed.
+const PAYMENTS_CITY_LIST = [
+  'bangalore', 'delhi', 'ghaziabad', 'gurugram', 'hyderabad',
+  'mumbai', 'navi mumbai', 'noida', 'pune', 'thane'
+];
+
+// ═════════════════════════════════════════════════════════════
+// END PAYMENTS MODULE (v5.9)
+// ═════════════════════════════════════════════════════════════
+
 </script>
 </body>
 </html>
