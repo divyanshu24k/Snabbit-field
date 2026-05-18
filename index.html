@@ -1575,6 +1575,163 @@
 </div>
 
 
+<!-- ════════════════ OFFLINE BRANDING (v5.8) ════════════════ -->
+
+<!-- Screen 1: Branding type picker (7 options) -->
+<div class="screen" id="screen-branding-types">
+  <div class="big-label">Branding</div>
+  <div class="big-title">Offline Branding</div>
+  <p class="sub">Pick what you want to log today.</p>
+
+  <div class="option-cards" id="brandingTypeList">
+    <div class="option-card" onclick="openBrandingType('Pole_Banner')">
+      <div class="option-card-icon">🚩</div>
+      <div class="option-card-body">
+        <div class="option-card-title">Pole Banner</div>
+        <div class="option-card-sub">Execution or audit data for pole banners.</div>
+      </div>
+    </div>
+    <div class="option-card" onclick="openBrandingType('Lift_Poster')">
+      <div class="option-card-icon">🛗</div>
+      <div class="option-card-body">
+        <div class="option-card-title">Lift Posters</div>
+        <div class="option-card-sub">Planned, executed and go-live date.</div>
+      </div>
+    </div>
+    <div class="option-card" onclick="openBrandingType('Sunboard')">
+      <div class="option-card-icon">🪧</div>
+      <div class="option-card-body">
+        <div class="option-card-title">Sunboards / Sunpacks</div>
+        <div class="option-card-sub">Execution or audit data.</div>
+      </div>
+    </div>
+    <div class="option-card" onclick="openBrandingType('Society_Branding')">
+      <div class="option-card-icon">🏘️</div>
+      <div class="option-card-body">
+        <div class="option-card-title">Society Branding</div>
+        <div class="option-card-sub">Execution or audit data.</div>
+      </div>
+    </div>
+    <div class="option-card" onclick="openBrandingType('Gazebo_Umbrella')">
+      <div class="option-card-icon">⛱️</div>
+      <div class="option-card-body">
+        <div class="option-card-title">Gazebo / Umbrella</div>
+        <div class="option-card-sub">Execution or audit data.</div>
+      </div>
+    </div>
+    <div class="option-card" onclick="openBrandingType('Digital_Screen')">
+      <div class="option-card-icon">📺</div>
+      <div class="option-card-body">
+        <div class="option-card-title">Digital Screen</div>
+        <div class="option-card-sub">Planned, executed and go-live date.</div>
+      </div>
+    </div>
+    <div class="option-card" onclick="openBrandingType('OOH')">
+      <div class="option-card-icon">🛣️</div>
+      <div class="option-card-body">
+        <div class="option-card-title">OOH</div>
+        <div class="option-card-sub">Planned, executed and go-live date.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Screen 2: Execution-vs-Audit sub-option picker (only shown for the 4 audit-pattern types) -->
+<div class="screen" id="screen-branding-suboption">
+  <div class="big-label">Branding</div>
+  <div class="big-title" id="brandingSubTitle">—</div>
+  <p class="sub">What are you submitting today?</p>
+
+  <div class="option-cards">
+    <div class="option-card" onclick="openBrandingForm('Execution')">
+      <div class="option-card-icon">🛠️</div>
+      <div class="option-card-body">
+        <div class="option-card-title">Execution</div>
+        <div class="option-card-sub">Log planned vs executed quantity, and the date executed.</div>
+      </div>
+    </div>
+    <div class="option-card" onclick="openBrandingForm('Audit')">
+      <div class="option-card-icon">🔍</div>
+      <div class="option-card-body">
+        <div class="option-card-title">Audit</div>
+        <div class="option-card-sub">Log live count observed during audit, and the audit date.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Screen 3: Branding form (used by all 7 types) -->
+<div class="screen" id="screen-branding-form">
+  <div class="big-label" id="brandingFormLabel">Branding</div>
+  <div class="big-title" id="brandingFormTitle">—</div>
+  <p class="sub" id="brandingFormSub">Fill in the details below and submit.</p>
+
+  <div id="brandingError" class="error-msg"></div>
+  <div id="brandingSuccess" class="success-msg"></div>
+
+  <div class="input-wrap">
+    <label>City</label>
+    <select id="brandingCitySelect" onchange="onBrandingCityChange()">
+      <option value="">Select city…</option>
+    </select>
+  </div>
+
+  <div class="input-wrap">
+    <label>MM Name</label>
+    <select id="brandingMmSelect" onchange="onBrandingMmChange()" disabled>
+      <option value="">Select MM…</option>
+    </select>
+  </div>
+
+  <div class="input-wrap">
+    <label>NM Name</label>
+    <select id="brandingNmSelect" disabled>
+      <option value="">Select NM…</option>
+    </select>
+  </div>
+
+  <!-- Planned row (hidden for Audit submissions) -->
+  <div class="input-wrap" id="brandingPlannedWrap">
+    <label id="brandingPlannedLabel">Planned</label>
+    <input type="number" id="brandingPlanned" min="0" step="1" value="0" />
+  </div>
+
+  <!-- Executed / Live Count row -->
+  <div class="input-wrap">
+    <label id="brandingExecutedLabel">Executed</label>
+    <input type="number" id="brandingExecuted" min="0" step="1" value="0" />
+  </div>
+
+  <!-- Date row (label changes per pattern: Execution Date / Audit Date / Go Live Date) -->
+  <div class="input-wrap">
+    <label id="brandingDateLabel">Execution Date</label>
+    <input type="date" id="brandingDate" />
+  </div>
+
+  <div class="input-wrap">
+    <label>Notes (optional)</label>
+    <textarea id="brandingNotes" maxlength="500" placeholder="Any additional info — location landmark, special instructions, etc."></textarea>
+  </div>
+
+  <button class="btn btn-primary" id="brandingSubmitBtn" onclick="submitBranding()">Submit</button>
+</div>
+
+
+<!-- Screen 4: Branding success -->
+<div class="screen" id="screen-branding-success">
+  <div class="success-card">
+    <div class="success-icon">✓</div>
+    <div class="big-title" style="font-size:24px">Submitted!</div>
+    <p style="color:var(--muted);font-size:14px;margin-top:8px;font-weight:600;">Branding entry recorded.</p>
+    <div class="success-detail" id="brandingSuccessDetail"></div>
+  </div>
+  <button class="btn btn-primary" onclick="startBranding()">Submit Another</button>
+  <button class="btn btn-secondary" onclick="navigate('screen-home')">← Back to Home</button>
+</div>
+
+
 <!-- ════════════════ INVENTORY TOAST (v5.4) ════════════════ -->
 <div class="inv-toast" id="invToast"></div>
 
@@ -1595,6 +1752,9 @@ const CONFIG = {
   // v5.4 — Inventory module (sheets created and wired in)
   INVENTORY_STOCK_SHEET_ID:  '1rPSW6Fgwg9ihjSk_AHCN04hlAqaYNxLTDbLY8AibXPo',  // also holds Inventory_Stock_Audit (v5.4) and Inventory_Requirements (v5.5) tabs
   PRODUCT_CATALOG_SHEET_ID:  '1upHJLP9lI-pjvU8xEXMgCVtgP-6yDlCYYAA3EwuY40o',
+  // v5.8 — Offline Branding module (7 tabs: Pole_Banner, Lift_Poster, Sunboard,
+  // Society_Branding, Gazebo_Umbrella, Digital_Screen, OOH)
+  BRANDING_SHEET_ID:         '1BHUw906mOhBTivhgTJnQd8_RaqakvDdHyiTiBROjCyI',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
@@ -1698,15 +1858,21 @@ let state = {
   inventoryRepairs:         [],     // [{repair_id, agent_code, agent_name, city, product_id, product_name, qty, damage_type, description, photo_url, status, request_date, resolved_date, resolved_by_name}]
   inventoryRepairsLoaded:   false,
   repairPhotoData:          null,   // {base64, mime, filename, size} while attached to the form (cleared on submit/cancel)
+  // v5.8 — Offline Branding module
+  brandingAccess:           false,
+  brandingType:             '',     // currently selected branding type (e.g. 'Pole_Banner')
+  brandingSubmissionType:   '',     // 'Execution' or 'Audit' (only for audit-pattern types)
+  cityMmNmData:             [],     // [{city, mm, nm}] from Transfer_Tab — shared with branding cascading dropdowns
+  cityMmNmLoaded:           false,
 };
 
 
 // ─────────────────────────────────────────────────────────
 // SESSION
 // ─────────────────────────────────────────────────────────
-function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess) {
+function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess) {
   const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
-  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, expiry }));
+  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, expiry }));
 }
 function loadSession() {
   try {
@@ -1851,6 +2017,8 @@ async function loadCreds() {
     invDashIdx:     h.findIndex(c => c.includes('inventory') && c.includes('dashboard')),
     invRoleIdx:     h.findIndex(c => c.includes('inventory') && c.includes('role')),
     assignedCityIdx:h.findIndex(c => c.includes('assigned') && c.includes('city')),
+    // v5.8 — Offline Branding access (column K — brandingAccess)
+    brandingIdx:    h.findIndex(c => c.includes('branding')),
   };
 }
 
@@ -1866,7 +2034,7 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx } = await loadCreds();
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx, brandingIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
       String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
       String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
@@ -1890,12 +2058,14 @@ async function doLogin() {
     state.inventoryDashboardAccess = invDashIdx >= 0 ? toBoolean(match[invDashIdx]) : false;
     state.inventoryRole            = invRoleIdx >= 0 ? String(match[invRoleIdx] || '').trim().toLowerCase() : '';
     state.assignedCity             = assignedCityIdx >= 0 ? String(match[assignedCityIdx] || '').trim() : '';
+    // v5.8 — Offline Branding access
+    state.brandingAccess           = brandingIdx >= 0 ? toBoolean(match[brandingIdx]) : false;
 
     // If user has leaderboard access but never onboarded AND has no name in column M,
     // force them through the one-time onboarding form before home.
     const needsOnboarding = state.leaderboardAccess && !state.onboarded && !state.displayName;
 
-    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess);
+    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess);
     if (needsOnboarding) {
       // Cache duplicates list for warning before they pick a code.
       state._allRefCodes = rows.slice(headerIdx + 1)
@@ -1932,7 +2102,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -1955,6 +2125,7 @@ function renderHomeCards() {
     { icon:'📦', title:'Inventory Update',    sub:'Update stock for your location',   access: state.inventoryUpdateAccess,    action:'openInventoryUpdate()' },
     { icon:'📝', title:'Request More Stock',  sub:'Ask Central Team for additional inventory', access: state.inventoryUpdateAccess, action:'openRequirementRequest()' },
     { icon:'✅', title:'Review Requests',     sub:'Approve, reject, or fulfil pending stock requests', access: state.inventoryUpdateAccess && isCentralForReview, action:'openRequirementReview()' },
+    { icon:'🎨', title:'Offline Branding',    sub:'Log pole banners, posters, gazebos & more', access: state.brandingAccess, action:'startBranding()' },
   ];
   const accessible = cards.filter(c => c.access);
   const grid = document.getElementById('homeGrid');
@@ -3543,6 +3714,7 @@ window.addEventListener('load', () => {
     state.societyAccess     = session.societyAccess;
     state.leaderboardAccess = session.leaderboardAccess || false;
     state.slotCheckerAccess = session.slotCheckerAccess || false;
+    state.brandingAccess    = session.brandingAccess    || false;
     onLoggedIn();
   }
 });
@@ -5046,6 +5218,324 @@ async function actOnRequest(requestId, newStatus) {
 
 // ═════════════════════════════════════════════════════════════
 // END INVENTORY MODULE
+// ═════════════════════════════════════════════════════════════
+
+
+// ═════════════════════════════════════════════════════════════
+// OFFLINE BRANDING MODULE (v5.8)
+// ═════════════════════════════════════════════════════════════
+//
+// 7 branding types, two patterns:
+//   • Pattern A (Execution + Audit):
+//       Pole_Banner, Sunboard, Society_Branding, Gazebo_Umbrella
+//   • Pattern B (Single form):
+//       Lift_Poster, Digital_Screen, OOH
+//
+// City → MM → NM cascading dropdowns are sourced from the Transfer_Tab
+// in SUBMIT_SHEET_ID (same tab the row-transfer feature uses).
+// ═════════════════════════════════════════════════════════════
+
+// Maps internal type key → display title + pattern.
+const BRANDING_TYPES = {
+  Pole_Banner:      { title: 'Pole Banner',         pattern: 'audit'  },
+  Lift_Poster:      { title: 'Lift Posters',        pattern: 'single' },
+  Sunboard:         { title: 'Sunboards / Sunpacks',pattern: 'audit'  },
+  Society_Branding: { title: 'Society Branding',    pattern: 'audit'  },
+  Gazebo_Umbrella:  { title: 'Gazebo / Umbrella',   pattern: 'audit'  },
+  Digital_Screen:   { title: 'Digital Screen',      pattern: 'single' },
+  OOH:              { title: 'OOH',                 pattern: 'single' },
+};
+
+// Entry point — wired to the home tile.
+function startBranding() {
+  // Kick off the City/MM/NM load in the background (no await — picker doesn't need it yet).
+  loadCityMmNmData();
+  navigate('screen-branding-types');
+}
+
+// Step 1 → user picked a branding type.
+function openBrandingType(typeKey) {
+  if (!BRANDING_TYPES[typeKey]) return;
+  state.brandingType = typeKey;
+  state.brandingSubmissionType = '';
+
+  const cfg = BRANDING_TYPES[typeKey];
+  if (cfg.pattern === 'audit') {
+    // Show the Execution vs Audit picker.
+    document.getElementById('brandingSubTitle').textContent = cfg.title;
+    navigate('screen-branding-suboption');
+  } else {
+    // Single-form pattern — go straight to the form.
+    openBrandingForm('');
+  }
+}
+
+// Step 2 → user picked Execution or Audit (only for audit-pattern types).
+function openBrandingForm(submissionType) {
+  state.brandingSubmissionType = submissionType || '';
+  const typeKey = state.brandingType;
+  const cfg = BRANDING_TYPES[typeKey];
+  if (!cfg) { navigate('screen-branding-types'); return; }
+
+  // Reset form fields.
+  hideMsg('brandingError');
+  hideMsg('brandingSuccess');
+  document.getElementById('brandingPlanned').value  = '';
+  document.getElementById('brandingExecuted').value = '';
+  document.getElementById('brandingDate').value     = '';
+  document.getElementById('brandingNotes').value    = '';
+
+  // Title & subtitle.
+  document.getElementById('brandingFormTitle').textContent = cfg.title;
+  let labelSuffix = '';
+  if (cfg.pattern === 'audit') labelSuffix = ' · ' + submissionType;
+  document.getElementById('brandingFormLabel').textContent = 'Branding' + labelSuffix;
+
+  // Configure the form layout based on pattern + submission type.
+  const plannedWrap = document.getElementById('brandingPlannedWrap');
+  const executedLabel = document.getElementById('brandingExecutedLabel');
+  const dateLabel = document.getElementById('brandingDateLabel');
+
+  if (cfg.pattern === 'audit' && submissionType === 'Audit') {
+    // Audit: planned is hidden, executed shown as "Live Count", date shown as "Audit Date".
+    plannedWrap.style.display = 'none';
+    executedLabel.textContent = 'Live Count as per Audit';
+    dateLabel.textContent     = 'Audit Date';
+    document.getElementById('brandingFormSub').textContent = 'Record what was actually live during this audit.';
+  } else if (cfg.pattern === 'audit') {
+    // Execution: planned + executed + execution date.
+    plannedWrap.style.display = '';
+    executedLabel.textContent = 'Executed';
+    dateLabel.textContent     = 'Execution Date';
+    document.getElementById('brandingFormSub').textContent = 'Record how many were planned vs actually executed.';
+  } else {
+    // Single-form pattern: planned + executed + Go Live Date.
+    plannedWrap.style.display = '';
+    executedLabel.textContent = 'Executed';
+    dateLabel.textContent     = 'Go Live Date';
+    document.getElementById('brandingFormSub').textContent = 'Record the count and when this went live.';
+  }
+
+  // Populate cascading dropdowns.
+  populateBrandingCityDropdown();
+  navigate('screen-branding-form');
+}
+
+// Loads { city, mm, nm } rows from the Transfer_Tab via CSV export.
+// Same sheet (SUBMIT_SHEET_ID) the row-transfer feature already uses.
+async function loadCityMmNmData() {
+  if (state.cityMmNmLoaded) return;
+  try {
+    // The Transfer_Tab gid isn't known up front; use the spreadsheet name-based export.
+    const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SUBMIT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Transfer_Tab`;
+    const res = await fetch(url);
+    const text = await res.text();
+    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+      console.warn('Transfer_Tab not accessible — sheet may not be publicly readable.');
+      return;
+    }
+    const rows = parseCSV(text);
+    if (rows.length < 2) return;
+    // Header: A City | B MM | C NM
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const city = String(r[0] || '').trim();
+      const mm   = String(r[1] || '').trim();
+      const nm   = String(r[2] || '').trim();
+      if (city && mm && nm) out.push({ city, mm, nm });
+    }
+    state.cityMmNmData   = out;
+    state.cityMmNmLoaded = true;
+    // If the form is currently visible, refresh dropdowns.
+    if (document.getElementById('screen-branding-form').classList.contains('active')) {
+      populateBrandingCityDropdown();
+    }
+  } catch (e) {
+    console.warn('Failed to load Transfer_Tab', e);
+  }
+}
+
+// Build the City dropdown from cached data.
+function populateBrandingCityDropdown() {
+  const sel = document.getElementById('brandingCitySelect');
+  const mmSel = document.getElementById('brandingMmSelect');
+  const nmSel = document.getElementById('brandingNmSelect');
+
+  // Reset all three.
+  sel.innerHTML   = '<option value="">Select city…</option>';
+  mmSel.innerHTML = '<option value="">Select MM…</option>';
+  nmSel.innerHTML = '<option value="">Select NM…</option>';
+  mmSel.disabled  = true;
+  nmSel.disabled  = true;
+
+  if (!state.cityMmNmLoaded) {
+    // Show a loading hint inline.
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'Loading cities…';
+    opt.disabled = true;
+    sel.appendChild(opt);
+    return;
+  }
+
+  // Unique, sorted city list (display with title case, value stays raw).
+  const seen = new Set();
+  const cities = [];
+  for (const r of state.cityMmNmData) {
+    const key = r.city.toLowerCase();
+    if (!seen.has(key)) { seen.add(key); cities.push(r.city); }
+  }
+  cities.sort((a, b) => a.localeCompare(b));
+  for (const c of cities) {
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = titleCaseCity(c);
+    sel.appendChild(opt);
+  }
+}
+
+function onBrandingCityChange() {
+  const city = document.getElementById('brandingCitySelect').value;
+  const mmSel = document.getElementById('brandingMmSelect');
+  const nmSel = document.getElementById('brandingNmSelect');
+
+  mmSel.innerHTML = '<option value="">Select MM…</option>';
+  nmSel.innerHTML = '<option value="">Select NM…</option>';
+  nmSel.disabled  = true;
+
+  if (!city) { mmSel.disabled = true; return; }
+
+  const seen = new Set();
+  const mms = [];
+  for (const r of state.cityMmNmData) {
+    if (r.city.toLowerCase() !== city.toLowerCase()) continue;
+    const key = r.mm.toLowerCase();
+    if (!seen.has(key)) { seen.add(key); mms.push(r.mm); }
+  }
+  mms.sort((a, b) => a.localeCompare(b));
+  for (const m of mms) {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m;
+    mmSel.appendChild(opt);
+  }
+  mmSel.disabled = false;
+}
+
+function onBrandingMmChange() {
+  const city = document.getElementById('brandingCitySelect').value;
+  const mm   = document.getElementById('brandingMmSelect').value;
+  const nmSel = document.getElementById('brandingNmSelect');
+
+  nmSel.innerHTML = '<option value="">Select NM…</option>';
+  if (!city || !mm) { nmSel.disabled = true; return; }
+
+  const seen = new Set();
+  const nms = [];
+  for (const r of state.cityMmNmData) {
+    if (r.city.toLowerCase() !== city.toLowerCase()) continue;
+    if (r.mm.toLowerCase()   !== mm.toLowerCase())   continue;
+    const key = r.nm.toLowerCase();
+    if (!seen.has(key)) { seen.add(key); nms.push(r.nm); }
+  }
+  nms.sort((a, b) => a.localeCompare(b));
+  for (const n of nms) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = n;
+    nmSel.appendChild(opt);
+  }
+  nmSel.disabled = false;
+}
+
+// Submit handler.
+async function submitBranding() {
+  hideMsg('brandingError');
+  hideMsg('brandingSuccess');
+
+  const typeKey = state.brandingType;
+  const cfg = BRANDING_TYPES[typeKey];
+  if (!cfg) { showError('brandingError', 'Please select a branding type first.'); return; }
+
+  const isAudit = cfg.pattern === 'audit';
+  const submissionType = state.brandingSubmissionType || '';
+
+  const city  = document.getElementById('brandingCitySelect').value.trim();
+  const mm    = document.getElementById('brandingMmSelect').value.trim();
+  const nm    = document.getElementById('brandingNmSelect').value.trim();
+  const date  = document.getElementById('brandingDate').value.trim();
+  const notes = document.getElementById('brandingNotes').value.trim();
+  const plannedRaw  = document.getElementById('brandingPlanned').value.trim();
+  const executedRaw = document.getElementById('brandingExecuted').value.trim();
+
+  if (!city || !mm || !nm) {
+    showError('brandingError', 'Please select City, MM and NM.');
+    return;
+  }
+  if (!date) {
+    showError('brandingError', 'Please pick a date.');
+    return;
+  }
+
+  const executed = parseInt(executedRaw || '0', 10);
+  if (Number.isNaN(executed) || executed < 0) {
+    showError('brandingError', 'Executed/Live Count must be a whole number, zero or greater.');
+    return;
+  }
+
+  // Planned is required for everything except Audit submissions.
+  let plannedNum = null;
+  const needsPlanned = !(isAudit && submissionType === 'Audit');
+  if (needsPlanned) {
+    plannedNum = parseInt(plannedRaw || '0', 10);
+    if (Number.isNaN(plannedNum) || plannedNum < 0) {
+      showError('brandingError', 'Planned must be a whole number, zero or greater.');
+      return;
+    }
+  }
+
+  // Build payload.
+  const submissionId = `BR-${Date.now()}-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
+  const payload = {
+    action:         'submitBranding',
+    submission_id:  submissionId,
+    agent_code:     state.agentCode,
+    agent_name:     state.agentName,
+    branding_type:  typeKey,
+    city:           city,
+    mm_name:        mm,
+    nm_name:        nm,
+    executed:       executed,
+    action_date:    date,
+    notes:          notes,
+  };
+  if (needsPlanned) payload.planned = plannedNum;
+  if (isAudit)      payload.submission_type = submissionType;
+
+  const btn = document.getElementById('brandingSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  try {
+    await postToScript(payload);
+    // Build the success detail line.
+    const parts = [];
+    parts.push(`<b>${cfg.title}</b>`);
+    if (isAudit) parts.push(submissionType);
+    parts.push(`${titleCaseCity(city)} · ${nm}`);
+    if (needsPlanned) parts.push(`Planned: ${plannedNum}, Executed: ${executed}`);
+    else              parts.push(`Live Count: ${executed}`);
+    parts.push(`Date: ${date}`);
+    document.getElementById('brandingSuccessDetail').innerHTML = parts.join('<br>');
+    navigate('screen-branding-success');
+  } catch (e) {
+    showError('brandingError', 'Could not submit. Please check your connection and retry.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Submit';
+  }
+}
+
+// ═════════════════════════════════════════════════════════════
+// END OFFLINE BRANDING MODULE
 // ═════════════════════════════════════════════════════════════
 </script>
 </body>
