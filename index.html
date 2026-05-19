@@ -7,8 +7,16 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 5.9
+  VERSION     : 6.0
   LAST UPDATED: May 2026
+
+  CHANGES IN v6.0:
+    1. INVENTORY UPDATE — Total Stock field is now editable by
+       Managers and TLs as well, not just Central Team. The
+       client-side read-only gate and the "🔒 Only Central Team
+       can update Total Stock" note have been removed.
+       Server-side (Apps Script) already accepts total_stock from
+       any role, so no backend change is required.
 
   CHANGES IN v5.9:
     1. NEW MODULE: Payments (BTL finance team). 5 sub-features:
@@ -1446,7 +1454,6 @@
   <div class="input-wrap">
     <label>Total Stock</label>
     <input type="number" id="invTotalStock" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
-    <div class="field-lock-note" id="invTotalStockLockNote" style="display:none">🔒 Only Central Team can update Total Stock. Contact Central Team if a correction is needed.</div>
   </div>
 
   <div class="inv-num-row" id="invNumRow">
@@ -4669,11 +4676,10 @@ async function openInventoryUpdate(prefillRecordId) {
   itemSel.innerHTML = ['<option value="">Select item…</option>']
     .concat(state.productCatalog.map(p => `<option value="${p.product_id}">${p.product_name}</option>`)).join('');
 
-  // Total Stock lock
+  // Total Stock — editable by all roles (Central, Manager, TL) as of v6.0.
+  // (Previously locked for non-Central; gate removed per ops feedback.)
   const totalEl = document.getElementById('invTotalStock');
-  const lockNote = document.getElementById('invTotalStockLockNote');
-  if (isCentral) { totalEl.readOnly = false; lockNote.style.display = 'none'; }
-  else            { totalEl.readOnly = true;  lockNote.style.display = 'block'; }
+  totalEl.readOnly = false;
 
   // Pre-fill (if editing) or reset
   _populateTLDropdown(citySel.value);  // initial population based on city dropdown state
