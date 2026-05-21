@@ -10,13 +10,26 @@
   VERSION     : 6.0
   LAST UPDATED: May 2026
 
-  CHANGES IN v6.0:
-    1. INVENTORY UPDATE — Total Stock field is now editable by
-       Managers and TLs as well, not just Central Team. The
-       client-side read-only gate and the "🔒 Only Central Team
-       can update Total Stock" note have been removed.
-       Server-side (Apps Script) already accepts total_stock from
-       any role, so no backend change is required.
+  CHANGES IN v6.0 (Inventory Dashboard — Central view rework):
+    1. CENTRAL ACCOUNTS ONLY:
+       a) The City / Item / Team Member filters now drive EVERYTHING
+          on the dashboard — KPI tiles, Alerts, AND Recent Updates
+          all reflect the filtered set. (Previously filters only
+          narrowed the Stock-by-City matrix.)
+       b) The "Stock by City" matrix (city cards + coloured bars +
+          legend) is hidden for Central. Central uses the KPI tiles
+          + filters to slice the data instead.
+       c) New "Team Member" filter — populated from the unique
+          TL/Manager names present in the in-scope inventory stock,
+          narrowed by the selected City filter when one is chosen.
+    2. ALL ROLES:
+       a) Recent Updates is now collapsed by default. Tap the
+          "Recent Updates ▸" header to expand the feed. Keeps the
+          dashboard short when there are many records.
+    3. TL / MANAGER accounts:
+       a) Unchanged behaviour — filters still narrow only the matrix
+          (since they need to see the matrix); KPI/Alerts/Recent
+          stay on the full scoped set; no Team Member filter shown.
 
   CHANGES IN v5.9:
     1. NEW MODULE: Payments (BTL finance team). 5 sub-features:
@@ -741,6 +754,17 @@
     font-size: 11px; font-weight: 800; color: var(--muted);
     letter-spacing: 1.2px; text-transform: uppercase; margin: 4px 0 10px;
   }
+  /* v6.0 — collapsible Recent Updates toggle */
+  .inv-feed-toggle {
+    background: var(--surface2);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin-bottom: 0;
+    transition: background 0.15s;
+  }
+  .inv-feed-toggle:hover { background: var(--border); }
+  .inv-feed-toggle:active { background: var(--border); transform: scale(0.99); }
 
   /* Alerts panel */
   .inv-alert-row {
@@ -1383,7 +1407,7 @@
   <div id="invDashLoading" class="loading" style="display:none"><div class="spinner"></div> Loading inventory…</div>
 
   <div id="invDashContent" style="display:none">
-    <!-- v5.6 — Filters -->
+    <!-- v5.6 — Filters. v6.0: Team Member filter (Central only) + filters now drive KPI/Alerts/Recent for Central. -->
     <div class="inv-dash-filters">
       <div class="inv-dash-filter">
         <label>City</label>
@@ -1397,6 +1421,13 @@
           <option value="">All items</option>
         </select>
       </div>
+      <!-- v6.0 — Team Member filter, shown for Central accounts only. -->
+      <div class="inv-dash-filter" id="invDashFilterTeamWrap" style="display:none">
+        <label>Team Member</label>
+        <select id="invDashFilterTeam" onchange="renderInventoryDashboard()">
+          <option value="">All TLs / Managers</option>
+        </select>
+      </div>
     </div>
 
     <!-- KPI tiles -->
@@ -1406,19 +1437,24 @@
     <div class="inv-section-h">Alerts</div>
     <div id="invDashAlerts"></div>
 
-    <!-- Matrix -->
-    <div class="inv-section-h" style="margin-top:18px">Stock by City</div>
-    <div class="inv-legend">
-      <span class="inv-legend-item"><span class="inv-legend-dot" style="background:var(--success)"></span>Not in Use</span>
-      <span class="inv-legend-item"><span class="inv-legend-dot" style="background:var(--accent-light)"></span>In Use</span>
-      <span class="inv-legend-item"><span class="inv-legend-dot" style="background:#F0A500"></span>Damaged</span>
-      <span class="inv-legend-item"><span class="inv-legend-dot" style="background:var(--error)"></span>Ex-BDE</span>
+    <!-- Matrix — v6.0: hidden for Central accounts (they use filters + KPIs instead) -->
+    <div id="invDashStockByCity">
+      <div class="inv-section-h" style="margin-top:18px">Stock by City</div>
+      <div class="inv-legend">
+        <span class="inv-legend-item"><span class="inv-legend-dot" style="background:var(--success)"></span>Not in Use</span>
+        <span class="inv-legend-item"><span class="inv-legend-dot" style="background:var(--accent-light)"></span>In Use</span>
+        <span class="inv-legend-item"><span class="inv-legend-dot" style="background:#F0A500"></span>Damaged</span>
+        <span class="inv-legend-item"><span class="inv-legend-dot" style="background:var(--error)"></span>Ex-BDE</span>
+      </div>
+      <div id="invDashMatrix"></div>
     </div>
-    <div id="invDashMatrix"></div>
 
-    <!-- Recent updates feed -->
-    <div class="inv-section-h" style="margin-top:18px">Recent Updates</div>
-    <div id="invDashFeed"></div>
+    <!-- Recent updates feed — v6.0: collapsed by default; tap header to expand. -->
+    <div class="inv-section-h inv-feed-toggle" id="invDashFeedToggle" onclick="toggleInvDashFeed()" style="margin-top:18px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none">
+      <span>Recent Updates <span id="invDashFeedCount" style="font-weight:600;color:var(--muted);font-size:13px"></span></span>
+      <span id="invDashFeedChevron" style="font-size:14px;color:var(--muted);transition:transform 0.2s">▸</span>
+    </div>
+    <div id="invDashFeed" style="display:none"></div>
   </div>
 
   <button class="btn btn-secondary" onclick="navigate('screen-inventory-update')" id="invDashGoToUpdate" style="display:none;margin-top:18px">✎ Update Inventory</button>
@@ -1454,6 +1490,7 @@
   <div class="input-wrap">
     <label>Total Stock</label>
     <input type="number" id="invTotalStock" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
+    <div class="field-lock-note" id="invTotalStockLockNote" style="display:none">🔒 Only Central Team can update Total Stock. Contact Central Team if a correction is needed.</div>
   </div>
 
   <div class="inv-num-row" id="invNumRow">
@@ -4264,6 +4301,16 @@ async function openInventoryDashboard() {
   document.getElementById('invDashContent').style.display = 'none';
   document.getElementById('invDashLoading').style.display = 'flex';
   document.getElementById('invDashGoToUpdate').style.display = state.inventoryUpdateAccess ? 'block' : 'none';
+
+  // v6.0 — Reset Recent Updates to collapsed each time the dashboard opens,
+  // and clear the Team Member filter so a fresh open shows the unfiltered view.
+  const feedEl = document.getElementById('invDashFeed');
+  if (feedEl) feedEl.style.display = 'none';
+  const chevronEl = document.getElementById('invDashFeedChevron');
+  if (chevronEl) chevronEl.style.transform = 'rotate(0deg)';
+  const teamSel = document.getElementById('invDashFilterTeam');
+  if (teamSel) teamSel.value = '';
+
   navigate('screen-inventory-dashboard');
 
   try {
@@ -4342,23 +4389,67 @@ function _populateDashFilters() {
 }
 
 function renderInventoryDashboard() {
-  // KPI tiles, Alerts, and Recent Updates always use the FULL scoped set so
-  // users get a holistic view even when they narrow the matrix.
+  // v6.0 — Behaviour now branches on Central vs TL/Manager.
+  // Central: filters (City + Item + Team Member) drive EVERYTHING — KPIs,
+  //          Alerts, Recent Updates. The Stock-by-City matrix is HIDDEN
+  //          (Central uses the KPIs to slice data instead).
+  // TL/Manager: original behaviour — filters narrow only the matrix; KPIs,
+  //          Alerts and Recent Updates always reflect the full scoped set.
+  const isCentral = _invIsCentral();
   const scoped = state.inventoryStock.filter(_invInScope);
 
-  // v5.6 — City + Item filters apply ONLY to the "Stock by City" matrix below.
-  // Empty value = no filter on that dimension.
+  // Filter values (Team Member only meaningful for Central, but reading it is harmless).
   const filterCity = (document.getElementById('invDashFilterCity') || {}).value || '';
   const filterItem = (document.getElementById('invDashFilterItem') || {}).value || '';
-  const matrixRows = scoped.filter(r => {
+  const filterTeam = (document.getElementById('invDashFilterTeam') || {}).value || '';
+
+  // Helper — apply the filters that are active. Team filter only respected for Central.
+  const applyFilters = (rows) => rows.filter(r => {
     if (filterCity && String(r.city || '').toLowerCase() !== filterCity.toLowerCase()) return false;
     if (filterItem && String(r.product_id || '') !== filterItem) return false;
+    if (isCentral && filterTeam && String(r.tl_manager_name || '').toLowerCase() !== filterTeam.toLowerCase()) return false;
     return true;
   });
+
+  // For Central, all sections use the fully-filtered set.
+  // For TL/Manager, KPI/Alerts/Recent use `scoped` and only the matrix uses the filtered set.
+  const filtered  = applyFilters(scoped);
+  const kpiSet    = isCentral ? filtered : scoped;
+  const alertSet  = isCentral ? filtered : scoped;
+  const feedSet   = isCentral ? filtered : scoped;
+  const matrixRows = filtered;   // always filter the matrix (unchanged for non-Central)
+
   document.getElementById('invDashContent').style.display = 'block';
 
+  // v6.0 — Show/hide Team Member filter + Stock-by-City based on role.
+  const teamWrap = document.getElementById('invDashFilterTeamWrap');
+  if (teamWrap) teamWrap.style.display = isCentral ? '' : 'none';
+  const stockByCityEl = document.getElementById('invDashStockByCity');
+  if (stockByCityEl) stockByCityEl.style.display = isCentral ? 'none' : 'block';
+
+  // v6.0 — Populate the Team Member dropdown for Central. Source: unique TL names in
+  // the in-scope stock, narrowed by the selected City filter (so picking Mumbai
+  // narrows the TL list to Mumbai TLs). Preserve current selection if still valid.
+  if (isCentral) {
+    const teamSel = document.getElementById('invDashFilterTeam');
+    if (teamSel) {
+      const poolForTeams = scoped.filter(r => {
+        if (filterCity && String(r.city || '').toLowerCase() !== filterCity.toLowerCase()) return false;
+        return true;
+      });
+      const teamNames = [...new Set(
+        poolForTeams.map(r => String(r.tl_manager_name || '').trim()).filter(Boolean)
+      )].sort((a, b) => a.localeCompare(b));
+      const currentVal = teamSel.value;
+      const stillValid = !currentVal || teamNames.some(n => n.toLowerCase() === currentVal.toLowerCase());
+      teamSel.innerHTML = '<option value="">All TLs / Managers</option>' +
+        teamNames.map(n => `<option value="${n}">${n}</option>`).join('');
+      teamSel.value = stillValid ? currentVal : '';
+    }
+  }
+
   // ── KPI tiles
-  const totals = scoped.reduce((a, r) => ({
+  const totals = kpiSet.reduce((a, r) => ({
     total:  a.total  + r.total_stock,
     inUse:  a.inUse  + r.stock_in_use,
     dmg:    a.dmg    + r.stock_damaged,
@@ -4370,7 +4461,7 @@ function renderInventoryDashboard() {
     <div class="inv-tile">
       <div class="inv-tile-label">Total Stock Received</div>
       <div class="inv-tile-value">${totals.total}</div>
-      <div class="inv-tile-sub">${scoped.length} records</div>
+      <div class="inv-tile-sub">${kpiSet.length} records</div>
     </div>
     <div class="inv-tile">
       <div class="inv-tile-label">In Use</div>
@@ -4389,21 +4480,22 @@ function renderInventoryDashboard() {
     </div>
   `;
 
-  // ── Alerts
+  // ── Alerts (uses alertSet — full scope for non-Central, filtered for Central)
   const alerts = [];
-  const stale = scoped.filter(r => _invDaysAgo(r.last_updated) > 7);
+  const stale = alertSet.filter(r => _invDaysAgo(r.last_updated) > 7);
   if (stale.length) alerts.push({ kind:'amber', icon:'⏳', title:`${stale.length} record${stale.length>1?'s':''} not updated this week`, sub:'Last update older than 7 days.' });
-  const dmgSpike = scoped.filter(r => r.total_stock >= 4 && (r.stock_damaged / r.total_stock) > 0.25);
+  const dmgSpike = alertSet.filter(r => r.total_stock >= 4 && (r.stock_damaged / r.total_stock) > 0.25);
   if (dmgSpike.length) alerts.push({ kind:'red', icon:'⚠️', title:`${dmgSpike.length} record${dmgSpike.length>1?'s':''} with damage above 25%`, sub:'Investigate or initiate repair/replacement.' });
-  const exBdeOld = scoped.filter(r => r.stock_with_ex_bde > 0 && _invDaysAgo(r.last_updated) > 30);
+  const exBdeOld = alertSet.filter(r => r.stock_with_ex_bde > 0 && _invDaysAgo(r.last_updated) > 30);
   if (exBdeOld.length) alerts.push({ kind:'red', icon:'👤', title:`${exBdeOld.length} record${exBdeOld.length>1?'s':''} with ex-BDE stock un-recovered for 30+ days`, sub:'Escalate to Central Team.' });
-  const uninit = scoped.filter(r => r.total_stock === 0 && r.stock_not_in_use+r.stock_in_use+r.stock_damaged+r.stock_with_ex_bde === 0 && _invDaysAgo(r.last_updated) > 3);
+  const uninit = alertSet.filter(r => r.total_stock === 0 && r.stock_not_in_use+r.stock_in_use+r.stock_damaged+r.stock_with_ex_bde === 0 && _invDaysAgo(r.last_updated) > 3);
   if (uninit.length) alerts.push({ kind:'amber', icon:'🆕', title:`${uninit.length} record${uninit.length>1?'s':''} await initialisation`, sub:'Central Team has not yet set Total Stock.' });
-  const mismatch = scoped.filter(r => (r.stock_not_in_use+r.stock_in_use+r.stock_damaged+r.stock_with_ex_bde) !== r.total_stock);
+  const mismatch = alertSet.filter(r => (r.stock_not_in_use+r.stock_in_use+r.stock_damaged+r.stock_with_ex_bde) !== r.total_stock);
   if (mismatch.length) alerts.push({ kind:'red', icon:'🧮', title:`${mismatch.length} record${mismatch.length>1?'s':''} with breakdown mismatch`, sub:'Sum of breakdown ≠ Total Stock. Data hygiene check.' });
   const alertsEl = document.getElementById('invDashAlerts');
   if (alerts.length === 0) {
-    alertsEl.innerHTML = `<div class="lb-empty">All clear. No alerts for your scope.</div>`;
+    const anyFilter = isCentral && (filterCity || filterItem || filterTeam);
+    alertsEl.innerHTML = `<div class="lb-empty">${anyFilter ? 'No alerts for the current filters.' : 'All clear. No alerts for your scope.'}</div>`;
   } else {
     alertsEl.innerHTML = alerts.map(a => `
       <div class="inv-alert-row ${a.kind}">
@@ -4416,55 +4508,61 @@ function renderInventoryDashboard() {
     `).join('');
   }
 
-  // ── City × Item matrix (uses filtered set so user filters apply here)
-  const byCity = {};
-  matrixRows.forEach(r => {
-    if (!byCity[r.city]) byCity[r.city] = { city: r.city, tl: r.tl_manager_name, items: [], total: 0 };
-    byCity[r.city].items.push(r);
-    byCity[r.city].total += r.total_stock;
-  });
-  const cities = Object.values(byCity).sort((a,b) => a.city.localeCompare(b.city));
-  const matrixEl = document.getElementById('invDashMatrix');
-  if (cities.length === 0) {
-    const anyFilter = filterCity || filterItem;
-    matrixEl.innerHTML = `<div class="lb-empty">${anyFilter ? 'No records match the current filters.' : 'No inventory records in your scope yet.'}</div>`;
-  } else {
-    matrixEl.innerHTML = cities.map(c => `
-      <div class="inv-city-card">
-        <div class="inv-city-card-h">
-          <div class="inv-city-name">${_invTitleCase(c.city)}</div>
-          <div class="inv-city-total">Total · <b>${c.total}</b></div>
-        </div>
-        ${c.items.map(r => {
-          const total = Math.max(r.total_stock, 1);
-          const pNot  = (r.stock_not_in_use / total) * 100;
-          const pUse  = (r.stock_in_use     / total) * 100;
-          const pDmg  = (r.stock_damaged    / total) * 100;
-          const pEx   = (r.stock_with_ex_bde/ total) * 100;
-          const reqQty = _inventoryRequiredFor(r.city, r.product_id);
-          return `
-            <div class="inv-item-row" onclick="openInvDetail('${r.record_id}')">
-              <div class="inv-item-name">${r.product_name || r.product_id}${reqQty > 0 ? ' <span style="font-size:10px;font-weight:800;color:var(--accent);background:#FFF0F6;padding:1px 6px;border-radius:999px;margin-left:4px">+${reqQty} req</span>' : ''}</div>
-              <div class="inv-item-bar" title="${r.stock_not_in_use}/${r.stock_in_use}/${r.stock_damaged}/${r.stock_with_ex_bde}">
-                <div class="inv-item-bar-seg inv-item-bar-good"  style="width:${pNot}%"></div>
-                <div class="inv-item-bar-seg inv-item-bar-inuse" style="width:${pUse}%"></div>
-                <div class="inv-item-bar-seg inv-item-bar-dmg"   style="width:${pDmg}%"></div>
-                <div class="inv-item-bar-seg inv-item-bar-exbde" style="width:${pEx}%"></div>
+  // ── City × Item matrix (only rendered for non-Central; container is hidden for Central)
+  if (!isCentral) {
+    const byCity = {};
+    matrixRows.forEach(r => {
+      if (!byCity[r.city]) byCity[r.city] = { city: r.city, tl: r.tl_manager_name, items: [], total: 0 };
+      byCity[r.city].items.push(r);
+      byCity[r.city].total += r.total_stock;
+    });
+    const cities = Object.values(byCity).sort((a,b) => a.city.localeCompare(b.city));
+    const matrixEl = document.getElementById('invDashMatrix');
+    if (cities.length === 0) {
+      const anyFilter = filterCity || filterItem;
+      matrixEl.innerHTML = `<div class="lb-empty">${anyFilter ? 'No records match the current filters.' : 'No inventory records in your scope yet.'}</div>`;
+    } else {
+      matrixEl.innerHTML = cities.map(c => `
+        <div class="inv-city-card">
+          <div class="inv-city-card-h">
+            <div class="inv-city-name">${_invTitleCase(c.city)}</div>
+            <div class="inv-city-total">Total · <b>${c.total}</b></div>
+          </div>
+          ${c.items.map(r => {
+            const total = Math.max(r.total_stock, 1);
+            const pNot  = (r.stock_not_in_use / total) * 100;
+            const pUse  = (r.stock_in_use     / total) * 100;
+            const pDmg  = (r.stock_damaged    / total) * 100;
+            const pEx   = (r.stock_with_ex_bde/ total) * 100;
+            const reqQty = _inventoryRequiredFor(r.city, r.product_id);
+            return `
+              <div class="inv-item-row" onclick="openInvDetail('${r.record_id}')">
+                <div class="inv-item-name">${r.product_name || r.product_id}${reqQty > 0 ? ' <span style="font-size:10px;font-weight:800;color:var(--accent);background:#FFF0F6;padding:1px 6px;border-radius:999px;margin-left:4px">+${reqQty} req</span>' : ''}</div>
+                <div class="inv-item-bar" title="${r.stock_not_in_use}/${r.stock_in_use}/${r.stock_damaged}/${r.stock_with_ex_bde}">
+                  <div class="inv-item-bar-seg inv-item-bar-good"  style="width:${pNot}%"></div>
+                  <div class="inv-item-bar-seg inv-item-bar-inuse" style="width:${pUse}%"></div>
+                  <div class="inv-item-bar-seg inv-item-bar-dmg"   style="width:${pDmg}%"></div>
+                  <div class="inv-item-bar-seg inv-item-bar-exbde" style="width:${pEx}%"></div>
+                </div>
+                <div class="inv-item-total">${r.total_stock}</div>
               </div>
-              <div class="inv-item-total">${r.total_stock}</div>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    `).join('');
+            `;
+          }).join('')}
+        </div>
+      `).join('');
+    }
   }
 
-  // ── Recent updates feed (last 20 in scope)
-  const feed = scoped
+  // ── Recent updates feed (uses feedSet — full scope for non-Central, filtered for Central)
+  // v6.0 — Now rendered into a collapsed section; header shows count, content shown
+  // only when expanded via toggleInvDashFeed().
+  const feed = feedSet
     .filter(r => r.last_updated)
     .sort((a,b) => (b.last_updated || '').localeCompare(a.last_updated || ''))
     .slice(0, 20);
   const feedEl = document.getElementById('invDashFeed');
+  const feedCountEl = document.getElementById('invDashFeedCount');
+  if (feedCountEl) feedCountEl.textContent = feed.length ? `· ${feed.length}` : '';
   if (feed.length === 0) {
     feedEl.innerHTML = `<div class="lb-empty">No recent updates.</div>`;
   } else {
@@ -4476,6 +4574,17 @@ function renderInventoryDashboard() {
       </div>
     `).join('');
   }
+}
+
+// v6.0 — Toggle the Recent Updates feed open/closed. Collapsed by default each
+// time the dashboard is opened (state lives in the DOM, not in `state`).
+function toggleInvDashFeed() {
+  const feedEl     = document.getElementById('invDashFeed');
+  const chevronEl  = document.getElementById('invDashFeedChevron');
+  if (!feedEl) return;
+  const isOpen = feedEl.style.display !== 'none';
+  feedEl.style.display = isOpen ? 'none' : 'block';
+  if (chevronEl) chevronEl.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(90deg)';
 }
 
 // ─────────────────────────────────────────────────────────
@@ -4676,10 +4785,11 @@ async function openInventoryUpdate(prefillRecordId) {
   itemSel.innerHTML = ['<option value="">Select item…</option>']
     .concat(state.productCatalog.map(p => `<option value="${p.product_id}">${p.product_name}</option>`)).join('');
 
-  // Total Stock — editable by all roles (Central, Manager, TL) as of v6.0.
-  // (Previously locked for non-Central; gate removed per ops feedback.)
+  // Total Stock lock
   const totalEl = document.getElementById('invTotalStock');
-  totalEl.readOnly = false;
+  const lockNote = document.getElementById('invTotalStockLockNote');
+  if (isCentral) { totalEl.readOnly = false; lockNote.style.display = 'none'; }
+  else            { totalEl.readOnly = true;  lockNote.style.display = 'block'; }
 
   // Pre-fill (if editing) or reset
   _populateTLDropdown(citySel.value);  // initial population based on city dropdown state
