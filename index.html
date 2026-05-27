@@ -7,8 +7,35 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.2
+  VERSION     : 6.3
   LAST UPDATED: May 2026
+
+  CHANGES IN v6.3 (Manager city-level performance view):
+    1. Login Credentials columns R (Role) and S (Cities Access) are now
+       parsed at sign-in. Stored in state.userRole and state.managerCities.
+       Column R should hold 'Manager' for city heads. Column S is a
+       comma-separated list of cities (e.g. "Pune, Mumbai, Thane, Navi Mumbai").
+       NOTE: No backend / Apps Script change required — both columns
+       already live in the Credentials sheet.
+    2. MY PERFORMANCE — when the logged-in user's role is 'Manager':
+       • The single-BDE hero/rank/earned/bonus block is replaced with
+         a per-city breakdown list. Each card shows the city name,
+         total recharges across all BDEs in that city for the selected
+         period, and the BDE count contributing to that total.
+       • A summary card at the top shows combined recharges + BDE count
+         across all assigned cities.
+       • Period tabs (Today / Yesterday / Week / Month) work the same way
+         as the BDE view — Today uses live data, historical periods
+         lazily load BDE_Daily_Performance.
+       • Slab-nudge, incentive structure button, and Earned/Bonus cards
+         are hidden (these are BDE-only concepts).
+    3. LEADERBOARD — Managers see a third toggle "My Cities" alongside
+       Pan India. It shows all BDEs from their assigned cities ranked
+       together. The original Pan India view is unchanged and still
+       available. The per-city toggle button (visible to BDEs) is
+       hidden for Managers since they have multiple cities.
+    4. If a Manager has no cities in column S, they get the standard
+       BDE experience (defensive fallback — no broken state).
 
   CHANGES IN v6.2 (Offline Branding — Replacement option):
     1. Pole Banner and Society Branding now have THREE sub-options
@@ -934,6 +961,44 @@
   .perf-action-btn .arrow { color: var(--muted); }
   .perf-action-btn .arrow .ti { font-size: 14px; }
 
+  /* v6.3 — Manager / City-Head Performance view */
+  .mgr-summary {
+    background: linear-gradient(135deg, var(--navy) 0%, #1a2332 100%);
+    color: #fff; border-radius: var(--radius); padding: 18px 18px 16px;
+    margin-bottom: 14px;
+  }
+  .mgr-summary-label { font-size: 12px; font-weight: 500; opacity: 0.75; letter-spacing: 0.3px; }
+  .mgr-summary-number {
+    font-size: 36px; font-weight: 700; margin-top: 4px;
+    font-variant-numeric: tabular-nums; letter-spacing: -1px;
+  }
+  .mgr-summary-meta {
+    font-size: 12px; font-weight: 500; opacity: 0.85; margin-top: 4px;
+  }
+  .mgr-city-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .mgr-city-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .mgr-city-card-left { min-width: 0; }
+  .mgr-city-card-name {
+    font-size: 14px; font-weight: 600; color: var(--navy);
+    margin-bottom: 2px;
+  }
+  .mgr-city-card-bdes {
+    font-size: 11px; font-weight: 500; color: var(--muted);
+  }
+  .mgr-city-card-num {
+    font-size: 22px; font-weight: 700; color: var(--navy);
+    font-variant-numeric: tabular-nums; letter-spacing: -0.5px;
+  }
+  .mgr-empty {
+    background: var(--surface); border: 1px dashed var(--border);
+    border-radius: var(--radius-sm); padding: 18px;
+    text-align: center; font-size: 13px; color: var(--muted);
+  }
+
   /* PERIOD TAB STRIP */
   .perf-period-tabs {
     background: var(--surface2); border: 1px solid var(--border);
@@ -1772,30 +1837,44 @@
       <button class="perf-period-btn"        data-period="month"     onclick="setPerfPeriod('month')">Month</button>
     </div>
 
-    <div class="perf-hero">
-      <div class="perf-hero-label" id="perfHeroLabel">Recharges today</div>
-      <div class="perf-hero-number" id="perfRecharges">0</div>
-      <div class="perf-hero-sub" id="perfNextSlab">—</div>
-      <div class="perf-progress-wrap"><div class="perf-progress-fill" id="perfProgressFill" style="width:0%"></div></div>
-      <div class="perf-progress-text" id="perfProgressText">—</div>
+    <!-- v6.3 — Manager / City Head view. Shown only when isManager() is true; built by renderManagerPerformance(). -->
+    <div id="perfMgrView" style="display:none">
+      <div class="mgr-summary">
+        <div class="mgr-summary-label" id="perfMgrSummaryLabel">Recharges today (all cities)</div>
+        <div class="mgr-summary-number" id="perfMgrSummaryNumber">0</div>
+        <div class="mgr-summary-meta" id="perfMgrSummaryMeta">—</div>
+      </div>
+      <div class="perf-section-label">Per-city breakdown</div>
+      <div class="mgr-city-list" id="perfMgrCityList"></div>
     </div>
 
-    <!-- Slab nudge card — only on Today tab -->
-    <div class="perf-slab-nudge" id="perfSlabNudge" style="display:none">
-      <div class="perf-slab-nudge-icon"><i class="ti ti-bolt"></i></div>
-      <div class="perf-slab-nudge-text" id="perfSlabNudgeText">—</div>
-    </div>
+    <!-- Standard BDE view — hidden when isManager() is true. -->
+    <div id="perfBdeView">
+      <div class="perf-hero">
+        <div class="perf-hero-label" id="perfHeroLabel">Recharges today</div>
+        <div class="perf-hero-number" id="perfRecharges">0</div>
+        <div class="perf-hero-sub" id="perfNextSlab">—</div>
+        <div class="perf-progress-wrap"><div class="perf-progress-fill" id="perfProgressFill" style="width:0%"></div></div>
+        <div class="perf-progress-text" id="perfProgressText">—</div>
+      </div>
 
-    <div class="perf-stats-row">
-      <div class="perf-stat-card"><div class="perf-stat-value" id="perfRank">—</div><div class="perf-stat-label">Rank</div></div>
-      <div class="perf-stat-card"><div class="perf-stat-value" id="perfEarned">₹0</div><div class="perf-stat-label">Earned</div></div>
-      <div class="perf-stat-card"><div class="perf-stat-value" id="perfBonus">—</div><div class="perf-stat-label">Bonus</div></div>
+      <!-- Slab nudge card — only on Today tab -->
+      <div class="perf-slab-nudge" id="perfSlabNudge" style="display:none">
+        <div class="perf-slab-nudge-icon"><i class="ti ti-bolt"></i></div>
+        <div class="perf-slab-nudge-text" id="perfSlabNudgeText">—</div>
+      </div>
+
+      <div class="perf-stats-row">
+        <div class="perf-stat-card"><div class="perf-stat-value" id="perfRank">—</div><div class="perf-stat-label">Rank</div></div>
+        <div class="perf-stat-card"><div class="perf-stat-value" id="perfEarned">₹0</div><div class="perf-stat-label">Earned</div></div>
+        <div class="perf-stat-card"><div class="perf-stat-value" id="perfBonus">—</div><div class="perf-stat-label">Bonus</div></div>
+      </div>
     </div>
 
     <div class="perf-announce" id="perfAnnounce" style="display:none"></div>
 
     <button class="perf-action-btn" onclick="openLeaderboard()"><span><i class="ti ti-trophy" style="margin-right:8px;color:var(--accent)"></i>View full leaderboard</span><span class="arrow"><i class="ti ti-chevron-right"></i></span></button>
-    <button class="perf-action-btn" onclick="openIncentiveInfo()"><span><i class="ti ti-coin-rupee" style="margin-right:8px;color:var(--accent)"></i>Incentive structure</span><span class="arrow"><i class="ti ti-chevron-right"></i></span></button>
+    <button class="perf-action-btn" id="perfIncentiveBtn" onclick="openIncentiveInfo()"><span><i class="ti ti-coin-rupee" style="margin-right:8px;color:var(--accent)"></i>Incentive structure</span><span class="arrow"><i class="ti ti-chevron-right"></i></span></button>
   </div>
 </div>
 
@@ -1830,10 +1909,11 @@
       </div>
     </div>
 
-    <!-- Toggle: Pan India | City -->
+    <!-- Toggle: Pan India | City  (v6.3 adds "My Cities" for Managers) -->
     <div class="lb-toggle-wrap" id="lbToggleWrap">
       <button class="lb-toggle-btn active" id="lbToggleNational" onclick="setLeaderboardView('national')">Pan India</button>
       <button class="lb-toggle-btn" id="lbToggleCity" onclick="setLeaderboardView('city')">City</button>
+      <button class="lb-toggle-btn" id="lbToggleMyCities" onclick="setLeaderboardView('myCities')" style="display:none">My Cities</button>
     </div>
 
     <!-- Period tabs (Today / Yesterday / Week / Month) — week = last 7 days, month = last 30 days -->
@@ -2710,15 +2790,19 @@ let state = {
   societyMaster:            {},     // { cityLower: [{society_name, nm_name, mm_name}, ...] }
   societyMasterLoaded:      {},     // { cityLower: true } — lazy-loaded per city
   paymentsFiles:            {},     // { slotKey: {base64, mime, filename, size} } for the open form
+  // v6.3 — Manager / City Head fields (columns R + S of Login Credentials).
+  userRole:                 '',     // raw role string from column R (e.g. 'Manager', 'BDE', etc.)
+  managerCities:            [],     // parsed array from column S — e.g. ['Pune','Mumbai','Thane','Navi Mumbai']
+  mgrPeriod:                'today',// selected period on the Manager-flavored Performance screen
 };
 
 
 // ─────────────────────────────────────────────────────────
 // SESSION
 // ─────────────────────────────────────────────────────────
-function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess) {
+function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, userRole, managerCities) {
   const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
-  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, expiry }));
+  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, userRole, managerCities, expiry }));
 }
 function loadSession() {
   try {
@@ -2831,6 +2915,7 @@ function toBoolean(val) {
 // CREDENTIALS — uses /export?format=csv (more reliable than gviz
 // when sheet has empty columns or unusual formatting).
 // Columns: S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access | Leaderboard Access | Onboarded | Name | Ref Code | Slot Checker Access
+// v6.3 adds: column R = Role (e.g. 'Manager'), column S = Cities Access (comma-separated)
 // ─────────────────────────────────────────────────────────
 async function loadCreds() {
   const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.CREDS_SHEET_ID}/export?format=csv&gid=0`;
@@ -2867,6 +2952,18 @@ async function loadCreds() {
     brandingIdx:    h.findIndex(c => c.includes('branding')),
     // v5.9 — Payments access (column T — payments access). Free-text, comma-separated codes.
     paymentsIdx:    h.findIndex(c => c.includes('payments') && c.includes('access')),
+    // v6.3 — Role (column R) + Cities Access (column S) for Manager / City-Head view.
+    // Header tolerance: matches plain "role" (and excludes "inventory role" via the negative check).
+    // Falls back to positional column index (R=17, S=18, both 0-based) if header detection fails.
+    roleIdx:         (function(){
+      const i = h.findIndex(c => c === 'role' || (c.includes('role') && !c.includes('inventory')));
+      return i >= 0 ? i : 17;   // column R = index 17
+    })(),
+    // "Cities Access" or "City Access" or just "cities" — but NOT "assigned city" (that's the Inventory column).
+    citiesAccessIdx: (function(){
+      const i = h.findIndex(c => (c.includes('cities access') || c.includes('city access') || (c.includes('cities') && !c.includes('assigned'))));
+      return i >= 0 ? i : 18;   // column S = index 18
+    })(),
   };
 }
 
@@ -2882,7 +2979,7 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx, brandingIdx, paymentsIdx } = await loadCreds();
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx, brandingIdx, paymentsIdx, roleIdx, citiesAccessIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
       String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
       String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
@@ -2911,12 +3008,17 @@ async function doLogin() {
     state.brandingAccess           = brandingIdx >= 0 ? toBoolean(match[brandingIdx]) : false;
     // v5.9 — Payments access (parse comma-separated codes from column T)
     state.paymentsAccess           = paymentsIdx >= 0 ? parsePaymentsAccess(match[paymentsIdx]) : [];
+    // v6.3 — Manager / City Head role + cities (columns R + S).
+    state.userRole                 = roleIdx >= 0 ? String(match[roleIdx] || '').trim() : '';
+    state.managerCities            = citiesAccessIdx >= 0 ? _parseManagerCities(match[citiesAccessIdx]) : [];
 
     // If user has leaderboard access but never onboarded AND has no name in column M,
     // force them through the one-time onboarding form before home.
-    const needsOnboarding = state.leaderboardAccess && !state.onboarded && !state.displayName;
+    // v6.3 — Managers are exempt from onboarding (they don't earn referral codes).
+    const isMgr = (state.userRole || '').trim().toLowerCase() === 'manager' && state.managerCities.length > 0;
+    const needsOnboarding = !isMgr && state.leaderboardAccess && !state.onboarded && !state.displayName;
 
-    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess);
+    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess, state.userRole, state.managerCities);
     if (needsOnboarding) {
       // Cache duplicates list for warning before they pick a code.
       state._allRefCodes = rows.slice(headerIdx + 1)
@@ -2953,7 +3055,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{}, userRole:'', managerCities:[], mgrPeriod:'today' };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -4061,11 +4163,29 @@ async function openPerformance() {
   hideMsg('perfError');
   // Reset to Today tab on each entry.
   state.perfPeriod = 'today';
+  state.mgrPeriod  = 'today';   // v6.3 — manager view shares the same tab strip
+  // Sync the period-tab UI to "today" each time we land here.
+  document.querySelectorAll('#perfPeriodTabs .perf-period-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.period === 'today');
+  });
   try {
     // Daily perf can be loaded lazily (only fetched if user switches tabs),
     // but loading it eagerly keeps the UX snappy when they do.
     await Promise.all([loadPerformance(), loadIncentiveConfig()]);
-    renderPerformance();
+    // v6.3 — Toggle Manager vs BDE view containers, then render.
+    const mgr = isManager();
+    document.getElementById('perfMgrView').style.display = mgr ? 'block' : 'none';
+    document.getElementById('perfBdeView').style.display = mgr ? 'none' : 'block';
+    // Incentive structure button is BDE-only.
+    const incBtn = document.getElementById('perfIncentiveBtn');
+    if (incBtn) incBtn.style.display = mgr ? 'none' : '';
+    if (mgr) {
+      renderManagerPerformance();
+      document.getElementById('perfLoading').style.display = 'none';
+      document.getElementById('perfContent').style.display = 'block';
+    } else {
+      renderPerformance();
+    }
   } catch (e) {
     document.getElementById('perfLoading').style.display = 'none';
     if (e.message && e.message.includes('ACCESS_DENIED')) {
@@ -4078,25 +4198,122 @@ async function openPerformance() {
 
 async function setPerfPeriod(period) {
   state.perfPeriod = period;
+  state.mgrPeriod  = period;   // v6.3 — keep both in sync; only the active view uses its value
   // Update tab button state immediately for responsiveness.
-  document.querySelectorAll('.perf-period-btn').forEach(btn => {
+  document.querySelectorAll('#perfPeriodTabs .perf-period-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.period === period);
   });
 
-  // For non-Today periods we need the daily-perf data.
+  // For non-Today periods we need the daily-perf data — for BOTH manager and BDE views.
   if (period !== 'today' && !state.dailyDataLoaded) {
-    // Show a transient "loading" in the hero number.
-    document.getElementById('perfRecharges').textContent = '…';
-    document.getElementById('perfNextSlab').textContent  = 'Loading historical data…';
+    // v6.3 — show a loading hint in whichever view is visible.
+    if (isManager()) {
+      document.getElementById('perfMgrSummaryNumber').textContent = '…';
+      document.getElementById('perfMgrSummaryMeta').textContent   = 'Loading historical data…';
+      document.getElementById('perfMgrCityList').innerHTML        = `<div class="mgr-empty">Loading…</div>`;
+    } else {
+      document.getElementById('perfRecharges').textContent = '…';
+      document.getElementById('perfNextSlab').textContent  = 'Loading historical data…';
+    }
     try {
       await loadDailyPerformance();
     } catch (e) {
-      document.getElementById('perfRecharges').textContent = '—';
-      document.getElementById('perfNextSlab').textContent  = 'Could not load historical data';
+      if (isManager()) {
+        document.getElementById('perfMgrSummaryNumber').textContent = '—';
+        document.getElementById('perfMgrSummaryMeta').textContent   = 'Could not load historical data';
+        document.getElementById('perfMgrCityList').innerHTML        = `<div class="mgr-empty">Could not load.</div>`;
+      } else {
+        document.getElementById('perfRecharges').textContent = '—';
+        document.getElementById('perfNextSlab').textContent  = 'Could not load historical data';
+      }
       return;
     }
   }
-  renderPerformance();
+  if (isManager()) renderManagerPerformance();
+  else             renderPerformance();
+}
+
+// v6.3 — Manager / City-Head Performance render.
+// Builds a top summary card (combined total + BDE count across all assigned cities)
+// plus a per-city breakdown list, for the selected period.
+function renderManagerPerformance() {
+  const cities  = state.managerCities || [];
+  const period  = state.mgrPeriod || 'today';
+  // Use the same period-aware dataset that powers the leaderboard.
+  // For 'today' this is state.performanceData; for others it's joined with dailyData.
+  const data    = leaderboardDataForPeriod(period);
+
+  // Case-insensitive set of cities this manager can see.
+  const allowed = new Set(cities.map(c => c.toLowerCase()));
+
+  // Bucket all BDEs by city (lowercase key) — only those in the manager's allowed set.
+  const byCity = new Map();
+  for (const d of data) {
+    const k = (d.city || '').toLowerCase();
+    if (!k || !allowed.has(k)) continue;
+    let entry = byCity.get(k);
+    if (!entry) {
+      entry = { displayName: d.city, total: 0, bdeCount: 0, activeBdeCount: 0 };
+      byCity.set(k, entry);
+    }
+    entry.total    += d.recharges || 0;
+    entry.bdeCount += 1;
+    if ((d.recharges || 0) > 0) entry.activeBdeCount += 1;
+  }
+
+  // Hero labels per period.
+  const periodLabelMap = {
+    today:     'Recharges today (all cities)',
+    yesterday: 'Recharges yesterday (all cities)',
+    week:      'Recharges in last 7 days (all cities)',
+    month:     'Recharges in last 30 days (all cities)',
+  };
+  document.getElementById('perfMgrSummaryLabel').textContent = periodLabelMap[period] || periodLabelMap.today;
+
+  // Combined total + BDE count across all the manager's cities.
+  let combinedTotal = 0, combinedBdeCount = 0;
+  for (const v of byCity.values()) {
+    combinedTotal    += v.total;
+    combinedBdeCount += v.bdeCount;
+  }
+  document.getElementById('perfMgrSummaryNumber').textContent = combinedTotal;
+  document.getElementById('perfMgrSummaryMeta').textContent   =
+    `${combinedBdeCount} BDE${combinedBdeCount === 1 ? '' : 's'} across ${byCity.size || 0} ` +
+    `${(byCity.size === 1) ? 'city' : 'cities'}`;
+
+  // Per-city cards — preserve the order the manager set them in column S.
+  const listEl = document.getElementById('perfMgrCityList');
+  if (cities.length === 0) {
+    listEl.innerHTML = `<div class="mgr-empty">No cities assigned. Please contact admin.</div>`;
+    return;
+  }
+
+  // Sort assigned-cities preserving original order, fall back to alphabetical
+  // if the entry is missing (no data) so the empty rows still appear.
+  const cardHtml = cities.map(cityRaw => {
+    const k = cityRaw.toLowerCase();
+    const e = byCity.get(k);
+    const display = titleCaseCity(cityRaw);
+    if (!e) {
+      return `
+        <div class="mgr-city-card">
+          <div class="mgr-city-card-left">
+            <div class="mgr-city-card-name">${display}</div>
+            <div class="mgr-city-card-bdes">No BDEs found</div>
+          </div>
+          <div class="mgr-city-card-num">0</div>
+        </div>`;
+    }
+    return `
+      <div class="mgr-city-card">
+        <div class="mgr-city-card-left">
+          <div class="mgr-city-card-name">${display}</div>
+          <div class="mgr-city-card-bdes">${e.bdeCount} BDE${e.bdeCount === 1 ? '' : 's'} · ${e.activeBdeCount} active</div>
+        </div>
+        <div class="mgr-city-card-num">${e.total}</div>
+      </div>`;
+  }).join('');
+  listEl.innerHTML = cardHtml;
 }
 
 function renderPerformance() {
@@ -4208,8 +4425,13 @@ async function openLeaderboard() {
   });
   try {
     if (state.performanceData.length === 0) await loadPerformance();
-    // Default view: city if user has a city, otherwise national.
-    state.lbView = state.userCity ? 'city' : 'national';
+    // Default view per role:
+    //   • Manager       → My Cities (combined view of their assigned cities)
+    //   • BDE with city → City (their own city)
+    //   • Otherwise     → Pan India
+    if (isManager())         state.lbView = 'myCities';
+    else if (state.userCity) state.lbView = 'city';
+    else                     state.lbView = 'national';
     renderLeaderboard();
   } catch (e) {
     document.getElementById('lbLoading').style.display = 'none';
@@ -4242,8 +4464,11 @@ async function setLeaderboardPeriod(period) {
 
 function setLeaderboardView(view) {
   state.lbView = view;
+  // v6.3 — three toggle buttons now (national | city | myCities). City and myCities are mutually exclusive in practice.
   document.getElementById('lbToggleNational').classList.toggle('active', view === 'national');
   document.getElementById('lbToggleCity').classList.toggle('active', view === 'city');
+  const myCitiesBtn = document.getElementById('lbToggleMyCities');
+  if (myCitiesBtn) myCitiesBtn.classList.toggle('active', view === 'myCities');
   renderLeaderboardList();
 }
 
@@ -4251,6 +4476,7 @@ function renderLeaderboard() {
   // Pick the dataset for the selected period. Today uses live snapshot;
   // other periods re-aggregate from dailyData and recompute ranks.
   const periodData = leaderboardDataForPeriod(state.lbPeriod);
+  const mgr = isManager();
 
   // 1) Identity card (always visible at top — name, ref code, ranks)
   const me = periodData.find(d => d.agentCode === state.agentCode);
@@ -4259,13 +4485,47 @@ function renderLeaderboard() {
   // Fall back to onboarding-collected ref code, then nothing.
   const myRefCode = (me && me.refCode) || state.referralCode || '';
   document.getElementById('lbIdentityName').textContent = myDisplayName;
-  document.getElementById('lbIdentityCode').textContent = myRefCode || '—';
+  // For Managers the ref-code line is shown as their role ("Manager · 4 cities") since they have no ref code.
+  if (mgr) {
+    const n = state.managerCities.length;
+    document.getElementById('lbIdentityCode').textContent = `Manager · ${n} ${n === 1 ? 'city' : 'cities'}`;
+  } else {
+    document.getElementById('lbIdentityCode').textContent = myRefCode || '—';
+  }
 
   const cityPill = document.getElementById('lbIdentityCity');
   const cityBlock = document.getElementById('lbIdentityCityBlock');
   const ranksWrap = document.getElementById('lbIdentityRanks');
 
-  if (state.userCity) {
+  if (mgr) {
+    // v6.3 — Manager identity: show their assigned cities as a single pill, replace
+    // the two-rank block with a combined-recharges + BDE-count summary for this period.
+    const cities = state.managerCities || [];
+    const allowed = new Set(cities.map(c => c.toLowerCase()));
+    let totalRech = 0, bdeCount = 0;
+    for (const d of periodData) {
+      if (!allowed.has((d.city || '').toLowerCase())) continue;
+      totalRech += d.recharges || 0;
+      bdeCount  += 1;
+    }
+    const pillText = cities.length <= 2
+      ? cities.map(titleCaseCity).join(' · ')
+      : `${titleCaseCity(cities[0])} +${cities.length - 1}`;
+    cityPill.textContent = pillText;
+    cityPill.style.display = 'inline-block';
+    cityBlock.style.display = 'block';
+    ranksWrap.classList.remove('single');
+    document.getElementById('lbIdentityCityLabel').textContent = 'Total Recharges';
+    document.getElementById('lbIdentityCityRank').innerHTML =
+      `${totalRech}<span class="rank-of">/ ${bdeCount} BDE${bdeCount === 1 ? '' : 's'}</span>`;
+    // Replace the "Pan India Rank" block with a "Cities" count to keep the two-block layout balanced.
+    const nationalLabel = document.querySelector('#lbIdentityRanks .lb-identity-rank-block:first-child .lb-identity-rank-label');
+    if (nationalLabel) nationalLabel.textContent = 'Cities';
+    document.getElementById('lbIdentityNationalRank').innerHTML = `${cities.length}`;
+  } else if (state.userCity) {
+    // Reset any manager-mode label overrides back to the BDE defaults.
+    const nationalLabel = document.querySelector('#lbIdentityRanks .lb-identity-rank-block:first-child .lb-identity-rank-label');
+    if (nationalLabel) nationalLabel.textContent = 'Pan India Rank';
     const cityDisplay = titleCaseCity(state.userCity);
     cityPill.textContent = cityDisplay;
     cityPill.style.display = 'inline-block';
@@ -4278,26 +4538,51 @@ function renderLeaderboard() {
     } else {
       document.getElementById('lbIdentityCityRank').textContent = '—';
     }
+    if (me) {
+      document.getElementById('lbIdentityNationalRank').innerHTML =
+        `${me.rank}<span class="rank-of">/ ${periodData.length}</span>`;
+    } else {
+      document.getElementById('lbIdentityNationalRank').textContent = '—';
+    }
   } else {
+    const nationalLabel = document.querySelector('#lbIdentityRanks .lb-identity-rank-block:first-child .lb-identity-rank-label');
+    if (nationalLabel) nationalLabel.textContent = 'Pan India Rank';
     cityPill.style.display = 'none';
     cityBlock.style.display = 'none';
     ranksWrap.classList.add('single');
+    if (me) {
+      document.getElementById('lbIdentityNationalRank').innerHTML =
+        `${me.rank}<span class="rank-of">/ ${periodData.length}</span>`;
+    } else {
+      document.getElementById('lbIdentityNationalRank').textContent = '—';
+    }
   }
 
-  if (me) {
-    document.getElementById('lbIdentityNationalRank').innerHTML =
-      `${me.rank}<span class="rank-of">/ ${periodData.length}</span>`;
-  } else {
-    document.getElementById('lbIdentityNationalRank').textContent = '—';
-  }
+  // 2) Toggle visibility — v6.3 — three modes:
+  //    • BDE with a city  → Pan India + their City
+  //    • Manager          → Pan India + My Cities (BDE-city toggle hidden)
+  //    • Anyone else      → toggle hidden, national only
+  const toggleWrap   = document.getElementById('lbToggleWrap');
+  const cityBtn      = document.getElementById('lbToggleCity');
+  const myCitiesBtn  = document.getElementById('lbToggleMyCities');
 
-  // 2) Toggle visibility — hide city tab if no city
-  const toggleWrap = document.getElementById('lbToggleWrap');
-  if (state.userCity) {
+  if (mgr) {
     toggleWrap.style.display = 'flex';
+    cityBtn.style.display      = 'none';
+    myCitiesBtn.style.display  = 'inline-flex';
+    // If we were on 'city' (shouldn't really happen for managers), bounce to 'myCities'.
+    if (state.lbView === 'city') state.lbView = 'myCities';
     document.getElementById('lbToggleNational').classList.toggle('active', state.lbView === 'national');
-    document.getElementById('lbToggleCity').classList.toggle('active', state.lbView === 'city');
-    document.getElementById('lbToggleCity').textContent = titleCaseCity(state.userCity);
+    myCitiesBtn.classList.toggle('active', state.lbView === 'myCities');
+  } else if (state.userCity) {
+    toggleWrap.style.display = 'flex';
+    cityBtn.style.display      = 'inline-flex';
+    myCitiesBtn.style.display  = 'none';
+    // If we were on 'myCities' (e.g. role changed), bounce to 'city'.
+    if (state.lbView === 'myCities') state.lbView = 'city';
+    document.getElementById('lbToggleNational').classList.toggle('active', state.lbView === 'national');
+    cityBtn.classList.toggle('active', state.lbView === 'city');
+    cityBtn.textContent = titleCaseCity(state.userCity);
   } else {
     toggleWrap.style.display = 'none';
     state.lbView = 'national';
@@ -4334,6 +4619,23 @@ function renderLeaderboardList(periodData) {
     rankKey = 'cityRank';
     document.getElementById('lbSub').textContent =
       `Top Performer in ${titleCaseCity(state.userCity)}${periodSuffix}`;
+  } else if (state.lbView === 'myCities' && isManager()) {
+    // v6.3 — Manager combined view: union of BDEs across their assigned cities,
+    // ranked together as a single pool. Compute a fresh rank inline so ties share rank.
+    const allowed = new Set((state.managerCities || []).map(c => c.toLowerCase()));
+    pool = periodData
+      .filter(d => allowed.has((d.city || '').toLowerCase()))
+      .sort((a, b) => b.recharges - a.recharges);
+    // Inline rank assignment (matches the tie-handling style used in loadPerformance).
+    let lastRech = null, lastRank = 0;
+    pool.forEach((d, i) => {
+      if (d.recharges !== lastRech) { lastRank = i + 1; lastRech = d.recharges; }
+      d._myCitiesRank = lastRank;
+    });
+    rankKey = '_myCitiesRank';
+    const cityCount = state.managerCities.length;
+    document.getElementById('lbSub').textContent =
+      `Top Performer across your ${cityCount} ${cityCount === 1 ? 'city' : 'cities'}${periodSuffix}`;
   } else {
     pool = periodData.slice().sort((a, b) => b.recharges - a.recharges);
     rankKey = 'rank';
@@ -4583,6 +4885,9 @@ window.addEventListener('load', () => {
     state.slotCheckerAccess = session.slotCheckerAccess || false;
     state.brandingAccess    = session.brandingAccess    || false;
     state.paymentsAccess    = Array.isArray(session.paymentsAccess) ? session.paymentsAccess : [];
+    // v6.3 — Manager / City Head fields.
+    state.userRole          = session.userRole || '';
+    state.managerCities     = Array.isArray(session.managerCities) ? session.managerCities : [];
     onLoggedIn();
   }
 });
@@ -4690,6 +4995,22 @@ function _parseAssignedCities(raw, role) {
   if (parts.some(p => p.toUpperCase() === 'ALL')) return ['ALL'];
   if (role === 'tl') return [parts[0]];   // defensive: TLs are single-city only
   return parts;
+}
+
+// v6.3 — Parser for the Manager's "Cities Access" column (column S).
+// Accepts comma-separated city names: "Pune, Mumbai, Thane, Navi Mumbai".
+// Returns an array of trimmed, non-empty city strings (preserving original case
+// for display; comparisons elsewhere are case-insensitive).
+function _parseManagerCities(raw) {
+  if (!raw) return [];
+  return String(raw).split(',').map(s => s.trim()).filter(Boolean);
+}
+
+// v6.3 — Returns true if the current user is a Manager / City Head with at
+// least one city in their access list. The role check is case-insensitive.
+function isManager() {
+  const role = (state.userRole || '').trim().toLowerCase();
+  return role === 'manager' && (state.managerCities || []).length > 0;
 }
 
 // True iff the current user has central-equivalent permissions (full access).
