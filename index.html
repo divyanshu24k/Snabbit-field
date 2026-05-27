@@ -7,8 +7,25 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.1
+  VERSION     : 6.2
   LAST UPDATED: May 2026
+
+  CHANGES IN v6.2 (Offline Branding — Replacement option):
+    1. Pole Banner and Society Branding now have THREE sub-options
+       instead of two: Execution, Audit, and Replacement.
+       Other audit-pattern types (Sunboard, Gazebo/Umbrella) still
+       show only Execution and Audit.
+    2. Replacement submissions collect Replacement Count and
+       Replacement Date (same data shape as Audit — no Planned field).
+    3. Backend schema for audit-pattern tabs extends from 14 to 16
+       columns. New columns: O = replacement_date, P = replacement_count.
+       Existing rows are untouched; Replacement rows fill cols O and P
+       while leaving I–M blank. Column H ('submission_type') now holds
+       'Execution' | 'Audit' | 'Replacement'.
+       NOTE: For existing Pole_Banner and Society_Branding tabs in the
+       Branding Sheet, manually add the two header labels in cells O1
+       and P1: 'replacement_date' and 'replacement_count'. New tabs
+       auto-write the full 16-column header.
 
   CHANGES IN v6.1 (Inventory Update — Total Stock unlocked for all):
     1. Removed the Central-Team-only restriction on the Total Stock
@@ -2263,6 +2280,14 @@
       <div class="option-card-body">
         <div class="option-card-title">Audit</div>
         <div class="option-card-sub">Log live count observed during audit, and the audit date.</div>
+      </div>
+    </div>
+    <!-- v6.2 — Replacement card. Shown only for Pole_Banner & Society_Branding (toggled by JS). -->
+    <div class="option-card" id="brandingReplacementCard" onclick="openBrandingForm('Replacement')" style="display:none">
+      <div class="option-card-icon"><i class="ti ti-refresh"></i></div>
+      <div class="option-card-body">
+        <div class="option-card-title">Replacement</div>
+        <div class="option-card-sub">Log replacement count and the date replaced.</div>
       </div>
     </div>
   </div>
@@ -6444,12 +6469,13 @@ async function actOnRepair(repairId, newStatus) {
 
 
 // ═════════════════════════════════════════════════════════════
-// OFFLINE BRANDING MODULE (v5.8)
+// OFFLINE BRANDING MODULE (v5.8, extended in v6.2)
 // ═════════════════════════════════════════════════════════════
 //
 // 7 branding types, two patterns:
-//   • Pattern A (Execution + Audit):
+//   • Pattern A (Execution + Audit, + Replacement for some):
 //       Pole_Banner, Sunboard, Society_Branding, Gazebo_Umbrella
+//       └─ Pole_Banner & Society_Branding ALSO support Replacement (v6.2).
 //   • Pattern B (Single form):
 //       Lift_Poster, Digital_Screen, OOH
 //
@@ -6468,6 +6494,12 @@ const BRANDING_TYPES = {
   OOH:              { title: 'OOH',                 pattern: 'single' },
 };
 
+// v6.2 — Only these audit-pattern types expose the third "Replacement" option.
+const BRANDING_REPLACEMENT_TYPES = {
+  Pole_Banner:      true,
+  Society_Branding: true,
+};
+
 // Entry point — wired to the home tile.
 function startBranding() {
   // Kick off the City/MM/NM load in the background (no await — picker doesn't need it yet).
@@ -6483,8 +6515,13 @@ function openBrandingType(typeKey) {
 
   const cfg = BRANDING_TYPES[typeKey];
   if (cfg.pattern === 'audit') {
-    // Show the Execution vs Audit picker.
+    // Show the Execution vs Audit (vs Replacement) picker.
     document.getElementById('brandingSubTitle').textContent = cfg.title;
+    // v6.2 — only show the Replacement card for Pole_Banner & Society_Branding.
+    const replCard = document.getElementById('brandingReplacementCard');
+    if (replCard) {
+      replCard.style.display = BRANDING_REPLACEMENT_TYPES[typeKey] ? '' : 'none';
+    }
     navigate('screen-branding-suboption');
   } else {
     // Single-form pattern — go straight to the form.
@@ -6524,6 +6561,12 @@ function openBrandingForm(submissionType) {
     executedLabel.textContent = 'Live Count as per Audit';
     dateLabel.textContent     = 'Audit Date';
     document.getElementById('brandingFormSub').textContent = 'Record what was actually live during this audit.';
+  } else if (cfg.pattern === 'audit' && submissionType === 'Replacement') {
+    // v6.2 — Replacement: planned hidden, executed shown as "Replacement Count", date shown as "Replacement Date".
+    plannedWrap.style.display = 'none';
+    executedLabel.textContent = 'Replacement Count';
+    dateLabel.textContent     = 'Replacement Date';
+    document.getElementById('brandingFormSub').textContent = 'Record how many were replaced and when.';
   } else if (cfg.pattern === 'audit') {
     // Execution: planned + executed + execution date.
     plannedWrap.style.display = '';
@@ -6702,13 +6745,14 @@ async function submitBranding() {
 
   const executed = parseInt(executedRaw || '0', 10);
   if (Number.isNaN(executed) || executed < 0) {
-    showError('brandingError', 'Executed/Live Count must be a whole number, zero or greater.');
+    showError('brandingError', 'Count must be a whole number, zero or greater.');
     return;
   }
 
-  // Planned is required for everything except Audit submissions.
+  // Planned is required only for Execution (audit-pattern) and single-pattern forms.
+  // Skipped for Audit and Replacement submissions.
   let plannedNum = null;
-  const needsPlanned = !(isAudit && submissionType === 'Audit');
+  const needsPlanned = !(isAudit && (submissionType === 'Audit' || submissionType === 'Replacement'));
   if (needsPlanned) {
     plannedNum = parseInt(plannedRaw || '0', 10);
     if (Number.isNaN(plannedNum) || plannedNum < 0) {
@@ -6744,8 +6788,13 @@ async function submitBranding() {
     parts.push(`<b>${cfg.title}</b>`);
     if (isAudit) parts.push(submissionType);
     parts.push(`${titleCaseCity(city)} · ${nm}`);
-    if (needsPlanned) parts.push(`Planned: ${plannedNum}, Executed: ${executed}`);
-    else              parts.push(`Live Count: ${executed}`);
+    if (needsPlanned) {
+      parts.push(`Planned: ${plannedNum}, Executed: ${executed}`);
+    } else if (submissionType === 'Replacement') {
+      parts.push(`Replacement Count: ${executed}`);
+    } else {
+      parts.push(`Live Count: ${executed}`);
+    }
     parts.push(`Date: ${date}`);
     document.getElementById('brandingSuccessDetail').innerHTML = parts.join('<br>');
     navigate('screen-branding-success');
