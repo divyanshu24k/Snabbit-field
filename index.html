@@ -7,8 +7,40 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.3.1
+  VERSION     : 6.6
   LAST UPDATED: May 2026
+
+  CHANGES IN v6.6 (Update Stock — return to home menu after save):
+    1. After a successful stock update, the app now briefly shows the
+       "Saved" confirmation and then returns the user to the home menu
+       (where the Dashboard / Update stock / Request stock options live),
+       instead of keeping them on the form. Saves a manual back-tap.
+    2. The local inventory cache is still updated optimistically on save,
+       so opening the Dashboard afterwards reflects the change immediately.
+    3. No backend / Apps Script change required.
+
+  CHANGES IN v6.5 (Update Stock — With Ex-BDE for all items):
+    1. The "With Ex-BDE" stock breakdown field is now shown for EVERY
+       item, alongside Not in Use / In Use / Damaged. Previously it was
+       shown only when a T-shirt product was selected and hidden (and
+       zeroed) for all other items.
+    2. It remains part of the breakdown sum that must equal Total Stock,
+       and is still saved to the stock_with_ex_bde column. No backend /
+       Apps Script change required (the field was already wired through
+       prefill, the breakdown check, and submit).
+
+  CHANGES IN v6.4 (Inventory Dashboard — unified filter-driven view):
+    1. ALL roles (Central, Manager, TL) now get the same filter-driven
+       dashboard the Central team previously had: the City + Item filters
+       drive the KPI tiles, Alerts, AND Recent Updates. The "Stock by city"
+       matrix is hidden for everyone (the filter-driven KPIs replace it).
+    2. The "Team Member" (TL/Manager) filter stays CENTRAL-ONLY. Managers
+       and TLs never see it.
+    3. City filter for Managers/TLs is unchanged: scoped to their assigned
+       city/cities. Single-city users have the City filter locked to their
+       city; multi-city managers still default to their first assigned city
+       (they can switch to "All cities").
+    4. No backend / Apps Script change required.
 
   CHANGES IN v6.3.1 (Manager count-accuracy fix):
     1. City matching for the Manager view now trims whitespace, lowercases,
@@ -2121,8 +2153,8 @@
       <label>Damaged</label>
       <input type="number" id="invStockDamaged" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
     </div>
-    <!-- v5.6 — With Ex-BDE only relevant for T-shirts (apparel that travels with ex-employees). Hidden by default; shown by onInvItemChange() when a T-shirt product is selected. -->
-    <div class="input-wrap" id="invStockExBDEWrap" style="display:none">
+    <!-- v6.5 — With Ex-BDE is now shown for ALL items, alongside Not in Use / In Use / Damaged. (Previously T-shirt-only, hidden by default.) -->
+    <div class="input-wrap" id="invStockExBDEWrap">
       <label>With Ex-BDE</label>
       <input type="number" id="invStockExBDE" min="0" step="1" value="0" oninput="recomputeInvMatch()" />
     </div>
@@ -5325,21 +5357,24 @@ function renderInventoryDashboard() {
     return true;
   });
 
-  // For Central, all sections use the fully-filtered set.
-  // For TL/Manager, KPI/Alerts/Recent use `scoped` and only the matrix uses the filtered set.
+  // v6.4 — ALL roles now use the fully-filtered set for KPIs/Alerts/Recent, and
+  // the Stock-by-City matrix is hidden for everyone (previously this view was
+  // Central-only). The only role difference left is the Team Member (TL) filter,
+  // which stays Central-only.
   const filtered  = applyFilters(scoped);
-  const kpiSet    = isCentral ? filtered : scoped;
-  const alertSet  = isCentral ? filtered : scoped;
-  const feedSet   = isCentral ? filtered : scoped;
-  const matrixRows = filtered;   // always filter the matrix (unchanged for non-Central)
+  const kpiSet    = filtered;
+  const alertSet  = filtered;
+  const feedSet   = filtered;
+  const matrixRows = filtered;
 
   document.getElementById('invDashContent').style.display = 'block';
 
-  // v6.0 — Show/hide Team Member filter + Stock-by-City based on role.
+  // v6.4 — Team Member filter remains Central-only. Stock-by-City matrix is now
+  // hidden for every role (the filter-driven KPIs replace it).
   const teamWrap = document.getElementById('invDashFilterTeamWrap');
   if (teamWrap) teamWrap.style.display = isCentral ? '' : 'none';
   const stockByCityEl = document.getElementById('invDashStockByCity');
-  if (stockByCityEl) stockByCityEl.style.display = isCentral ? 'none' : 'block';
+  if (stockByCityEl) stockByCityEl.style.display = 'none';
 
   // v6.0 — Populate the Team Member dropdown for Central. Source: unique TL names in
   // the in-scope stock, narrowed by the selected City filter (so picking Mumbai
@@ -5409,7 +5444,7 @@ function renderInventoryDashboard() {
   const alertsEl = document.getElementById('invDashAlerts');
   const alertsToggleEl = document.getElementById('invDashAlertsToggle');
   if (alerts.length === 0) {
-    const anyFilter = isCentral && (filterCity || filterItem || filterTeam);
+    const anyFilter = (filterCity || filterItem || (isCentral && filterTeam));
     alertsEl.innerHTML = `<div class="lb-empty">${anyFilter ? 'No alerts for the current filters.' : 'All clear. No alerts for your scope.'}</div>`;
     if (alertsToggleEl) alertsToggleEl.style.display = 'none';
   } else {
@@ -5436,8 +5471,10 @@ function renderInventoryDashboard() {
     }
   }
 
-  // ── City × Item matrix (only rendered for non-Central; container is hidden for Central)
-  if (!isCentral) {
+  // ── City × Item matrix — v6.4: the Stock-by-City container is now hidden for
+  // EVERY role (all roles use the filter-driven KPIs instead), so this block is
+  // skipped. Kept intact behind `false` in case the matrix view is reinstated.
+  if (false) {
     const byCity = {};
     matrixRows.forEach(r => {
       if (!byCity[r.city]) byCity[r.city] = { city: r.city, tl: r.tl_manager_name, items: [], total: 0 };
@@ -5493,7 +5530,7 @@ function renderInventoryDashboard() {
     }
   }
 
-  // ── Recent updates feed (uses feedSet — full scope for non-Central, filtered for Central)
+  // ── Recent updates feed (uses feedSet — filtered set for all roles as of v6.4)
   // v6.0 — Now rendered into a collapsed section; header shows count, content shown
   // only when expanded via toggleInvDashFeed().
   const feed = feedSet
@@ -5780,7 +5817,7 @@ async function openInventoryUpdate(prefillRecordId) {
     document.getElementById('invStockExBDE').value    = 0;
     document.getElementById('invRemarks').value       = '';
   }
-  _toggleExBdeField();  // v5.6 — set Ex-BDE field visibility based on current item
+  _toggleExBdeField();  // v6.5 — Ex-BDE field is always shown now
   recomputeInvMatch();
 }
 
@@ -5795,23 +5832,13 @@ function onInvItemChange() {
   _prefillFromExisting();
 }
 
-// v5.6 — Show the "With Ex-BDE" stock breakdown field only when a T-shirt
-// product is selected. For all other products the field is hidden AND its
-// value is reset to 0 so it can't silently break the breakdown sum.
+// v6.5 — "With Ex-BDE" is now a standard breakdown field shown for ALL items
+// (alongside Not in Use / In Use / Damaged). Previously it was shown only for
+// T-shirts and hidden/zeroed for everything else. The field is now always
+// visible; this helper just ensures that and keeps the breakdown sum in sync.
 function _toggleExBdeField() {
-  const pid = document.getElementById('invItemSelect').value;
-  const product = state.productCatalog.find(p => p.product_id === pid);
-  const name = String((product && product.product_name) || '').toLowerCase();
-  // Match common T-shirt spellings: "T-shirt", "Tshirt", "T shirt", "Tee".
-  const isTshirt = /\bt[- ]?shirt\b|\btshirt\b|\btee\b/i.test(name);
   const wrap = document.getElementById('invStockExBDEWrap');
-  const input = document.getElementById('invStockExBDE');
-  if (isTshirt) {
-    wrap.style.display = '';
-  } else {
-    wrap.style.display = 'none';
-    if (input) input.value = 0;
-  }
+  if (wrap) wrap.style.display = '';
   recomputeInvMatch();
 }
 function _prefillFromExisting() {
@@ -5945,7 +5972,16 @@ async function submitInventoryUpdate() {
     successEl.textContent = 'Inventory updated for ' + _invTitleCase(city) + ' · ' + pname + '.';
     successEl.style.display = 'block';
     btn.innerHTML = '<i class="ti ti-check"></i> Saved';
-    setTimeout(() => { btn.innerHTML = '<i class="ti ti-check"></i> Save update'; btn.disabled = false; }, 1500);
+
+    // v6.6 — After a successful save, briefly show the "Saved" confirmation, then
+    // return the user to the home menu (where the Dashboard / Update stock /
+    // Request stock options live) instead of keeping them on the form.
+    setTimeout(() => {
+      btn.innerHTML = '<i class="ti ti-check"></i> Save update';
+      btn.disabled = false;
+      hideMsg('invUpdateSuccess');
+      navigate('screen-home');
+    }, 1200);
   } catch (e) {
     showError('invUpdateError', 'Could not save. Please check your connection and try again.');
     btn.disabled = false; btn.innerHTML = '<i class="ti ti-check"></i> Save update';
