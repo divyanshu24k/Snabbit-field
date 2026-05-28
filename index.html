@@ -7,8 +7,31 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.3
+  VERSION     : 6.3.1
   LAST UPDATED: May 2026
+
+  CHANGES IN v6.3.1 (Manager count-accuracy fix):
+    1. City matching for the Manager view now trims whitespace, lowercases,
+       and collapses internal double-spaces on BOTH sides of the comparison
+       (column-S cities and the Performance sheet's city column). Previously
+       only lowercased — so a city stored as "Navi Mumbai " (trailing space)
+       or "Navi  Mumbai" (double space) in the Performance sheet was silently
+       dropped, making the per-city and combined totals come out LOWER than
+       the actual data. Fixed in renderManagerPerformance, the My-Cities
+       leaderboard filter, and the manager identity card.
+    2. Added a console diagnostic (open F12 → Console on the Performance
+       screen as a Manager). It prints: the cities from column S, which ones
+       matched data, which matched ZERO rows, the combined total, and ALL
+       distinct city strings present in the data with row counts. This makes
+       any remaining city-name mismatch between column S and the Performance
+       sheet immediately visible.
+    NOTE: If the totals are still off after this, the cause is a data
+    mismatch, not code — the city name in column S must match the city
+    column in the Performance sheet. The console diagnostic will show the
+    exact strings to reconcile. Also note: the Performance sheet's recharge
+    column is summed as-is; if your source-of-truth dashboard counts a
+    different metric (e.g. gross recharges vs distinct customers), the
+    numbers will differ for that reason.
 
   CHANGES IN v6.3 (Manager city-level performance view):
     1. Login Credentials columns R (Role) and S (Cities Access) are now
@@ -4243,13 +4266,17 @@ function renderManagerPerformance() {
   // For 'today' this is state.performanceData; for others it's joined with dailyData.
   const data    = leaderboardDataForPeriod(period);
 
-  // Case-insensitive set of cities this manager can see.
-  const allowed = new Set(cities.map(c => c.toLowerCase()));
+  // Normalizer — MUST match the rest of the codebase: trim + lowercase, and
+  // collapse any internal double-spaces (e.g. "Navi  Mumbai" → "navi mumbai").
+  const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-  // Bucket all BDEs by city (lowercase key) — only those in the manager's allowed set.
+  // Set of normalized cities this manager can see.
+  const allowed = new Set(cities.map(norm));
+
+  // Bucket all BDEs by normalized city key — only those in the manager's allowed set.
   const byCity = new Map();
   for (const d of data) {
-    const k = (d.city || '').toLowerCase();
+    const k = norm(d.city);
     if (!k || !allowed.has(k)) continue;
     let entry = byCity.get(k);
     if (!entry) {
@@ -4260,6 +4287,34 @@ function renderManagerPerformance() {
     entry.bdeCount += 1;
     if ((d.recharges || 0) > 0) entry.activeBdeCount += 1;
   }
+
+  // ── DIAGNOSTIC (v6.3) — helps reconcile the manager total against the
+  // source-of-truth dashboard. Open the browser console (F12) to read it.
+  // Prints the distinct city strings in the data, which column-S cities
+  // matched, and any that found ZERO rows (the usual cause of a low total).
+  try {
+    const distinctCities = {};
+    for (const d of data) {
+      const raw = String(d.city || '').trim();
+      if (!raw) continue;
+      distinctCities[raw] = (distinctCities[raw] || 0) + 1;
+    }
+    const matched   = cities.filter(c => byCity.has(norm(c)));
+    const unmatched = cities.filter(c => !byCity.has(norm(c)));
+    const rowsWithNoCity = data.filter(d => !String(d.city || '').trim()).length;
+    let combinedDbg = 0;
+    for (const v of byCity.values()) combinedDbg += v.total;
+    console.log(
+      `[ManagerPerf] period=${period}\n` +
+      `  column-S cities : ${JSON.stringify(cities)}\n` +
+      `  matched cities  : ${JSON.stringify(matched)}\n` +
+      `  UNMATCHED (0)   : ${JSON.stringify(unmatched)}\n` +
+      `  combined total  : ${combinedDbg}\n` +
+      `  rows in dataset : ${data.length} (rows with blank city: ${rowsWithNoCity})\n` +
+      `  ALL distinct city strings in data (with row counts):`,
+      distinctCities
+    );
+  } catch (e) { /* diagnostics must never break the render */ }
 
   // Hero labels per period.
   const periodLabelMap = {
@@ -4291,7 +4346,7 @@ function renderManagerPerformance() {
   // Sort assigned-cities preserving original order, fall back to alphabetical
   // if the entry is missing (no data) so the empty rows still appear.
   const cardHtml = cities.map(cityRaw => {
-    const k = cityRaw.toLowerCase();
+    const k = norm(cityRaw);
     const e = byCity.get(k);
     const display = titleCaseCity(cityRaw);
     if (!e) {
@@ -4500,11 +4555,12 @@ function renderLeaderboard() {
   if (mgr) {
     // v6.3 — Manager identity: show their assigned cities as a single pill, replace
     // the two-rank block with a combined-recharges + BDE-count summary for this period.
+    const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
     const cities = state.managerCities || [];
-    const allowed = new Set(cities.map(c => c.toLowerCase()));
+    const allowed = new Set(cities.map(norm));
     let totalRech = 0, bdeCount = 0;
     for (const d of periodData) {
-      if (!allowed.has((d.city || '').toLowerCase())) continue;
+      if (!allowed.has(norm(d.city))) continue;
       totalRech += d.recharges || 0;
       bdeCount  += 1;
     }
@@ -4622,9 +4678,11 @@ function renderLeaderboardList(periodData) {
   } else if (state.lbView === 'myCities' && isManager()) {
     // v6.3 — Manager combined view: union of BDEs across their assigned cities,
     // ranked together as a single pool. Compute a fresh rank inline so ties share rank.
-    const allowed = new Set((state.managerCities || []).map(c => c.toLowerCase()));
+    // Normalizer must match renderManagerPerformance (trim + lowercase + collapse spaces).
+    const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const allowed = new Set((state.managerCities || []).map(norm));
     pool = periodData
-      .filter(d => allowed.has((d.city || '').toLowerCase()))
+      .filter(d => allowed.has(norm(d.city)))
       .sort((a, b) => b.recharges - a.recharges);
     // Inline rank assignment (matches the tie-handling style used in loadPerformance).
     let lastRech = null, lastRank = 0;
