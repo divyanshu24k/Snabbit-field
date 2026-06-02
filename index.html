@@ -11,13 +11,13 @@
   LAST UPDATED: June 2026
 
   CHANGES IN v6.3 (Offline Branding — two new single-form types):
-    1. Added two new branding types to the picker: QC and NPI Headings.
+    1. Added two new branding types to the picker: QC and NPI.
     2. Both behave exactly like OOH (single-form pattern): City → MM → NM,
        Planned, Executed, Go Live Date, Notes. No Execution/Audit step.
     3. Added to the BRANDING_TYPES map (pattern: 'single') and as two new
        option cards in the type picker. No other client logic changed —
        the existing single-form path handles them generically.
-    4. Backend (apps_script v6.1): 'QC' and 'NPI_Headings' added to
+    4. Backend (apps_script v6.1): 'QC' and 'NPI' added to
        BRANDING_SINGLE_TABS. Submissions route to same-named tabs in the
        Branding Sheet; the 11-column header is written automatically if a
        tab is empty. (Tabs already created in the sheet.)
@@ -2277,10 +2277,10 @@
         <div class="option-card-sub">Planned, executed and go-live date.</div>
       </div>
     </div>
-    <div class="option-card" onclick="openBrandingType('NPI_Headings')">
+    <div class="option-card" onclick="openBrandingType('NPI')">
       <div class="option-card-icon"><i class="ti ti-heading"></i></div>
       <div class="option-card-body">
-        <div class="option-card-title">NPI Headings</div>
+        <div class="option-card-title">NPI</div>
         <div class="option-card-sub">Planned, executed and go-live date.</div>
       </div>
     </div>
@@ -6520,7 +6520,7 @@ const BRANDING_TYPES = {
   Digital_Screen:   { title: 'Digital Screen',      pattern: 'single' },
   OOH:              { title: 'OOH',                 pattern: 'single' },
   QC:               { title: 'QC',                  pattern: 'single' },
-  NPI_Headings:     { title: 'NPI Headings',        pattern: 'single' },
+  NPI:              { title: 'NPI',                 pattern: 'single' },
 };
 
 // v6.2 — Only these audit-pattern types expose the third "Replacement" option.
