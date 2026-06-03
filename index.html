@@ -7,8 +7,18 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.3
+  VERSION     : 6.4
   LAST UPDATED: June 2026
+
+  CHANGES IN v6.4 (Offline Branding — Planned box gated by column R):
+    1. The "Planned" field in EVERY branding form (single-form types and the
+       Execution step of audit types) is now shown only when Login Credentials
+       column R reads exactly "central" (case-insensitive). Hidden otherwise.
+    2. New flag state.brandingPlannedAccess, read from column R (index 17) at
+       login, persisted in the session, and restored on refresh.
+    3. When hidden, Planned is not validated or sent; the backend defaults the
+       planned column to 0. No Apps Script change required.
+    (Includes everything from v6.3 below.)
 
   CHANGES IN v6.3 (Offline Branding — two new single-form types):
     1. Added two new branding types to the picker: QC and NPI.
@@ -2725,6 +2735,7 @@ let state = {
   repairPhotoData:          null,   // {base64, mime, filename, size} while attached to the form (cleared on submit/cancel)
   // v5.8 — Offline Branding module
   brandingAccess:           false,
+  brandingPlannedAccess:    false,  // v6.4 — column R == 'central' → show Planned box in all branding forms
   brandingType:             '',     // currently selected branding type (e.g. 'Pole_Banner')
   brandingSubmissionType:   '',     // 'Execution' or 'Audit' (only for audit-pattern types)
   cityMmNmData:             [],     // [{city, mm, nm}] from Transfer_Tab — shared with branding cascading dropdowns
@@ -2743,9 +2754,9 @@ let state = {
 // ─────────────────────────────────────────────────────────
 // SESSION
 // ─────────────────────────────────────────────────────────
-function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess) {
+function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess) {
   const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
-  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, expiry }));
+  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess, expiry }));
 }
 function loadSession() {
   try {
@@ -2936,6 +2947,9 @@ async function doLogin() {
     state.assignedCities           = _parseAssignedCities(state.assignedCity, state.inventoryRole);
     // v5.8 — Offline Branding access
     state.brandingAccess           = brandingIdx >= 0 ? toBoolean(match[brandingIdx]) : false;
+    // v6.4 — Planned-box gate. Column R (18th column, 0-based index 17): show the
+    // Planned field in ALL branding forms only when it reads exactly "central".
+    state.brandingPlannedAccess    = String(match[17] || '').trim().toLowerCase() === 'central';
     // v5.9 — Payments access (parse comma-separated codes from column T)
     state.paymentsAccess           = paymentsIdx >= 0 ? parsePaymentsAccess(match[paymentsIdx]) : [];
 
@@ -2943,7 +2957,7 @@ async function doLogin() {
     // force them through the one-time onboarding form before home.
     const needsOnboarding = state.leaderboardAccess && !state.onboarded && !state.displayName;
 
-    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess);
+    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess, state.brandingPlannedAccess);
     if (needsOnboarding) {
       // Cache duplicates list for warning before they pick a code.
       state._allRefCodes = rows.slice(headerIdx + 1)
@@ -2980,7 +2994,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -4609,6 +4623,7 @@ window.addEventListener('load', () => {
     state.leaderboardAccess = session.leaderboardAccess || false;
     state.slotCheckerAccess = session.slotCheckerAccess || false;
     state.brandingAccess    = session.brandingAccess    || false;
+    state.brandingPlannedAccess = session.brandingPlannedAccess || false;  // v6.4
     state.paymentsAccess    = Array.isArray(session.paymentsAccess) ? session.paymentsAccess : [];
     onLoggedIn();
   }
@@ -6610,6 +6625,11 @@ function openBrandingForm(submissionType) {
     document.getElementById('brandingFormSub').textContent = 'Record the count and when this went live.';
   }
 
+  // v6.4 — Planned box is gated by column R. Only "central" users see it, in
+  // EVERY branding form (single + execution). Hidden for everyone else,
+  // overriding whichever branch above tried to show it.
+  if (!state.brandingPlannedAccess) plannedWrap.style.display = 'none';
+
   // Populate cascading dropdowns.
   populateBrandingCityDropdown();
   navigate('screen-branding-form');
@@ -6778,10 +6798,12 @@ async function submitBranding() {
     return;
   }
 
-  // Planned is required only for Execution (audit-pattern) and single-pattern forms.
-  // Skipped for Audit and Replacement submissions.
+  // Planned is captured only when the Planned box is shown — i.e. column R
+  // grants it (state.brandingPlannedAccess) AND it's not an Audit/Replacement row.
+  // v6.4: when hidden, planned is not validated or sent (backend defaults it to 0).
   let plannedNum = null;
-  const needsPlanned = !(isAudit && (submissionType === 'Audit' || submissionType === 'Replacement'));
+  const needsPlanned = state.brandingPlannedAccess &&
+                       !(isAudit && (submissionType === 'Audit' || submissionType === 'Replacement'));
   if (needsPlanned) {
     plannedNum = parseInt(plannedRaw || '0', 10);
     if (Number.isNaN(plannedNum) || plannedNum < 0) {
@@ -6821,8 +6843,11 @@ async function submitBranding() {
       parts.push(`Planned: ${plannedNum}, Executed: ${executed}`);
     } else if (submissionType === 'Replacement') {
       parts.push(`Replacement Count: ${executed}`);
-    } else {
+    } else if (submissionType === 'Audit') {
       parts.push(`Live Count: ${executed}`);
+    } else {
+      // v6.4 — single-form with Planned hidden (non-central): plain Executed count.
+      parts.push(`Executed: ${executed}`);
     }
     parts.push(`Date: ${date}`);
     document.getElementById('brandingSuccessDetail').innerHTML = parts.join('<br>');
