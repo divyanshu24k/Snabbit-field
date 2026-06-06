@@ -7,8 +7,39 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.5
+  VERSION     : 6.6
   LAST UPDATED: June 2026
+
+  CHANGES IN v6.6 (Incentive — weekday/weekend rates + range bands):
+    1. The Slabs tab moves from threshold rows (City | Recharges | Incentive)
+       to range bands with a day-type column:
+          City | Day Type | Min | Max | Incentive | Per Extra
+       Day Type = Weekday / Weekend (Sat+Sun = weekend, same rule as targets;
+       blank/'all'/'both' applies to either). City=ALL is the default; a
+       city's own rows override it.
+    2. Payout for a band = Incentive + Per Extra * (recharges - Min).
+       - Flat band: leave Per Extra blank (0) -> flat Incentive across the range.
+       - Open-ended top tier: leave Max blank. The highest band applies to any
+         count at/above its Min, so doing more never pays less. With Per Extra
+         set it grows per recharge — e.g. Min=16, Incentive=500, Per Extra=40
+         reproduces 500 + 40*(count-16).
+       - Gaps between bands, or counts below the lowest Min, pay 0 — keep ranges
+         contiguous.
+    3. Earned uses TODAY's recharges against TODAY's day-type bands (the slab
+       resets daily). Weekend bands on Sat/Sun, weekday bands Mon-Fri. The
+       Yesterday/Week/Month tabs still show recharge totals, not re-priced pay.
+    4. The "next slab" nudge/progress is day-type aware. Once a rep is in an
+       open per-recharge tier it shows the per-recharge rate ("+Rs.40 each")
+       instead of a fixed goal.
+    5. Incentive Structure screen stays visible and gains a Weekday / Weekend
+       toggle (defaults to today's day type), showing each band as a range
+       with its payout (flat, or "Rs.X + Rs.Y/recharge" for the open tier).
+    6. New helpers todayDayType(), currentSlabBand(); calcIncentive/nextSlab/
+       slabsForCity now take a dayType argument. New state field state.incView.
+    7. MIGRATION: rebuild the Slabs tab in the new 6-column format. Old
+       two-column rows are no longer read (earnings show Rs.0 until migrated).
+       Bonus tab is unchanged. FRONTEND-ONLY — no Apps Script change.
+    (Includes everything from v6.5 below.)
 
   CHANGES IN v6.5 (My Performance — Target vs Performance):
     1. The performance hero now shows a "Target" card under the recharge
@@ -1951,6 +1982,10 @@
   <div id="incError" class="error-msg"></div>
 
   <div class="perf-section-label">Recharge Slabs</div>
+  <div class="perf-period-tabs" id="incDayToggle">
+    <button class="perf-period-btn" id="incToggleWeekday" data-dt="weekday" onclick="setIncView('weekday')">Weekday</button>
+    <button class="perf-period-btn" id="incToggleWeekend" data-dt="weekend" onclick="setIncView('weekend')">Weekend</button>
+  </div>
   <div class="inc-table" id="incSlabsTable"></div>
 
   <div class="perf-section-label">Top Rank Bonus</div>
@@ -2768,6 +2803,7 @@ let state = {
   topBonusAll:       [],   // [{city, rank, bonus}, ...]
   campaignInfo:      null, // { name, start, end, announcement }
   targetsAll:        [],   // v6.5 — [{city, weekdayTarget, weekendTarget}] from Incentive Config "Target" tab
+  incView:           'weekday', // v6.6 — Weekday/Weekend toggle on the Incentive Structure screen
   lbView:            'national', // 'national' | 'city'
   lbPeriod:          'today',    // 'today' | 'yesterday' | 'week' | 'month' (week=last 7d, month=last 30d)
   userCity:          '',   // derived from logged-in agent's row in performance sheet (raw, lowercase)
@@ -3065,7 +3101,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, targetsAll:[], lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, targetsAll:[], incView:'weekday', lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -4053,24 +4089,39 @@ async function loadIncentiveConfig() {
   });
   state.campaignInfo = info;
 
-  // Slabs tab — City | Recharges | Incentive
+  // Slabs tab (v6.6) — City | Day Type | Min | Max | Incentive | Per Extra
+  //   Day Type : 'Weekday' | 'Weekend' (blank/'all'/'both' applies to either)
+  //   Min/Max  : recharge range for this band (blank Max = open-ended top tier)
+  //   Incentive: payout AT the band's Min count
+  //   Per Extra: Rs. added per recharge above Min (blank/0 = flat band)
+  // payout(count) = Incentive + (Per Extra) * (count - Min)
   const slabRows = parseCSV(slabsText);
-  const slabHeaderIdx = slabRows.findIndex(r => r.some(c => c.toLowerCase().includes('recharge')));
-  const slabHeader = slabHeaderIdx >= 0 ? slabRows[slabHeaderIdx].map(c => c.toLowerCase().trim()) : [];
-  const sCityIdx = slabHeader.findIndex(c => c === 'city');
-  const sRechIdx = slabHeader.findIndex(c => c.includes('recharge'));
+  const slabHeaderIdx = slabRows.findIndex(r => r.some(c => {
+    const s = String(c).toLowerCase();
+    return s.includes('min') || s.includes('incentive');
+  }));
+  const slabHeader = slabHeaderIdx >= 0 ? slabRows[slabHeaderIdx].map(c => String(c).toLowerCase().trim()) : [];
+  const sCityIdx = slabHeader.findIndex(c => c === 'city' || c.includes('city'));
+  const sDayIdx  = slabHeader.findIndex(c => c.includes('day'));
+  const sMinIdx  = slabHeader.findIndex(c => c === 'min' || c.includes('min'));
+  const sMaxIdx  = slabHeader.findIndex(c => c === 'max' || c.includes('max'));
   const sIncIdx  = slabHeader.findIndex(c => c.includes('incentive'));
+  const sPerIdx  = slabHeader.findIndex(c => c.includes('extra') || (c.includes('per') && c.includes('recharge')) || c.includes('step') || c.includes('slope'));
 
   state.incentiveSlabsAll = slabRows.slice(slabHeaderIdx + 1)
-    .filter(r => {
-      const rechCell = sRechIdx >= 0 ? r[sRechIdx] : r[0];
-      return rechCell && !isNaN(parseInt(rechCell));
+    .map(r => {
+      const maxRaw = sMaxIdx >= 0 ? String(r[sMaxIdx] || '').trim() : '';
+      const maxNum = maxRaw ? parseInt(maxRaw.replace(/[^0-9-]/g, ''), 10) : NaN;
+      return {
+        city:      sCityIdx >= 0 ? String(r[sCityIdx] || 'ALL').trim() : 'ALL',
+        dayType:   sDayIdx  >= 0 ? String(r[sDayIdx]  || '').trim().toLowerCase() : '',
+        min:       parseInt(String((sMinIdx >= 0 ? r[sMinIdx] : '') || '').replace(/[^0-9-]/g, ''), 10),
+        max:       isNaN(maxNum) ? null : maxNum,
+        incentive: parseInt(String((sIncIdx >= 0 ? r[sIncIdx] : '') || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+        perExtra:  parseInt(String((sPerIdx >= 0 ? r[sPerIdx] : '') || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+      };
     })
-    .map(r => ({
-      city:      sCityIdx >= 0 ? String(r[sCityIdx] || 'ALL').trim() : 'ALL',
-      recharges: parseInt(sRechIdx >= 0 ? r[sRechIdx] : r[0], 10),
-      incentive: parseInt(String((sIncIdx >= 0 ? r[sIncIdx] : r[1]) || '0').replace(/[^0-9-]/g, ''), 10) || 0,
-    }));
+    .filter(s => !isNaN(s.min));
 
   // Bonus tab — City | Rank | Bonus
   const bonusRows = parseCSV(bonusText);
@@ -4126,17 +4177,24 @@ async function loadIncentiveConfig() {
 // City matching is case-insensitive. Rows for the user's city take
 // precedence; if none exist, fall back to ALL rows.
 // ─────────────────────────────────────────────────────────
-function slabsForCity() {
+// v6.6 — slabs for the user's city AND the given day type ('weekday'|'weekend').
+// City-specific rows win over ALL. A row whose Day Type is blank/'all'/'both'
+// applies to either day type. Returned ascending by Min.
+function slabsForCity(dayType) {
   const city = (state.userCity || '').toLowerCase();
+  const dt   = String(dayType || '').toLowerCase();
+  const dtMatch = function(s) {
+    const rd = String(s.dayType || '').toLowerCase();
+    return rd === dt || rd === '' || rd === 'all' || rd === 'both';
+  };
   let rows = [];
   if (city) {
-    rows = state.incentiveSlabsAll.filter(s => s.city && s.city.toLowerCase() === city);
+    rows = state.incentiveSlabsAll.filter(s => s.city && s.city.toLowerCase() === city && dtMatch(s));
   }
   if (rows.length === 0) {
-    rows = state.incentiveSlabsAll.filter(s => (s.city || '').toUpperCase() === 'ALL');
+    rows = state.incentiveSlabsAll.filter(s => (s.city || '').toUpperCase() === 'ALL' && dtMatch(s));
   }
-  // Highest first (matches v5.1 contract).
-  return rows.slice().sort((a, b) => b.recharges - a.recharges);
+  return rows.slice().sort((a, b) => a.min - b.min);
 }
 
 function bonusForCity() {
@@ -4220,29 +4278,56 @@ function targetForPeriod(period) {
   return total;
 }
 
-// Given a recharge count, return the incentive earned (highest slab they cleared).
-function calcIncentive(recharges) {
-  for (const slab of slabsForCity()) {
-    if (recharges >= slab.recharges) return slab.incentive;
-  }
-  return 0;
+// v6.6 — Today's day type, used for the daily incentive (slab resets daily).
+function todayDayType() {
+  return isWeekendDay(startOfToday()) ? 'weekend' : 'weekday';
 }
 
-// Given a recharge count, return the next slab info or null if maxed.
-// Returns { recharges, incentive, gap, extra } where:
-//   gap   = how many more recharges to reach this slab
-//   extra = how much more (₹) the agent will earn by clearing this slab
-//           vs their current incentive
-function nextSlab(recharges) {
-  const slabsAsc = slabsForCity().slice().sort((a, b) => a.recharges - b.recharges);
-  for (const slab of slabsAsc) {
-    if (recharges < slab.recharges) {
-      const currentIncentive = calcIncentive(recharges);
+// v6.6 — The band a recharge count falls in for the given day type.
+// The HIGHEST band is treated as open-ended (any count >= its Min uses it),
+// so doing more never pays less. Counts below the lowest Min, or inside a gap
+// between bands, return null (-> Rs.0). Returns the band object or null.
+function currentSlabBand(recharges, dayType) {
+  const bands = slabsForCity(dayType); // ascending by Min
+  if (!bands.length) return null;
+  let chosen = null;
+  for (const b of bands) {
+    if (recharges >= b.min && (b.max == null || recharges <= b.max)) chosen = b;
+  }
+  if (!chosen) {
+    const top = bands[bands.length - 1];
+    if (recharges >= top.min) chosen = top; // open-ended top tier
+  }
+  return chosen;
+}
+
+// v6.6 — Incentive for a recharge count on the given day type.
+//   payout = Incentive + (Per Extra) * (count - Min) for the matching band.
+// Flat bands have Per Extra = 0, so this collapses to the flat amount.
+function calcIncentive(recharges, dayType) {
+  const band = currentSlabBand(recharges, dayType);
+  if (!band) return 0;
+  const per = band.perExtra || 0;
+  return Math.max(0, band.incentive + per * (recharges - band.min));
+}
+
+// v6.6 — Next band info, or null when already in the top/open tier.
+// Returns { recharges, incentive, gap, extra }:
+//   recharges = Min of the next band
+//   incentive = payout when you reach that Min
+//   gap       = how many more recharges to get there
+//   extra     = Rs. more than the current payout
+function nextSlab(recharges, dayType) {
+  const bands = slabsForCity(dayType); // ascending by Min
+  for (const b of bands) {
+    if (recharges < b.min) {
+      const cur       = calcIncentive(recharges, dayType);
+      const atBandMin = calcIncentive(b.min, dayType);
       return {
-        recharges: slab.recharges,
-        incentive: slab.incentive,
-        gap:       slab.recharges - recharges,
-        extra:     slab.incentive - currentIncentive,
+        recharges: b.min,
+        incentive: atBandMin,
+        gap:       b.min - recharges,
+        extra:     atBandMin - cur,
       };
     }
   }
@@ -4330,23 +4415,29 @@ function renderPerformance() {
   document.getElementById('perfHeroLabel').textContent = heroLabel;
   document.getElementById('perfRecharges').textContent = displayRecharges;
 
-  // Earnings & next-slab text are based on TODAY's recharges (the slab system
-  // resets daily; historical tabs are informational). But for the hero subtitle
-  // we want it to make sense per-period.
+  // v6.6 — Earnings use TODAY's recharges against TODAY's day-type bands
+  // (the slab resets daily; historical tabs stay informational).
   const isToday = state.perfPeriod === 'today';
-  const earned  = calcIncentive(todayRecharges);
-  const next    = nextSlab(todayRecharges);
+  const dt      = todayDayType();
+  const earned  = calcIncentive(todayRecharges, dt);
+  const next    = nextSlab(todayRecharges, dt);
+  const curBand = currentSlabBand(todayRecharges, dt);
+  const inOpenTier = !next && curBand && (curBand.perExtra || 0) > 0;
 
   if (isToday) {
     if (next) {
+      // Heading toward a higher band.
       document.getElementById('perfNextSlab').textContent = `${next.gap} more for ₹${next.incentive}`;
-      const slabsDescAll = slabsForCity();
-      const prevSlab = slabsDescAll.find(s => todayRecharges >= s.recharges);
-      const floor    = prevSlab ? prevSlab.recharges : 0;
-      const span     = next.recharges - floor;
-      const filled   = span > 0 ? ((todayRecharges - floor) / span) * 100 : 0;
+      const floor  = curBand ? curBand.min : 0;
+      const span   = next.recharges - floor;
+      const filled = span > 0 ? ((todayRecharges - floor) / span) * 100 : 0;
       document.getElementById('perfProgressFill').style.width = Math.max(0, Math.min(100, filled)) + '%';
       document.getElementById('perfProgressText').textContent = `Next target: ${next.recharges} recharges`;
+    } else if (inOpenTier) {
+      // Top tier is per-recharge — there is no fixed next goal.
+      document.getElementById('perfNextSlab').textContent = `Top tier — ₹${curBand.perExtra} per recharge`;
+      document.getElementById('perfProgressFill').style.width = '100%';
+      document.getElementById('perfProgressText').textContent = `Every extra recharge adds ₹${curBand.perExtra}`;
     } else {
       document.getElementById('perfNextSlab').textContent = 'Top slab achieved.';
       document.getElementById('perfProgressFill').style.width = '100%';
@@ -4364,7 +4455,10 @@ function renderPerformance() {
   const nudge     = document.getElementById('perfSlabNudge');
   const nudgeText = document.getElementById('perfSlabNudgeText');
   if (isToday) {
-    if (!next) {
+    if (inOpenTier) {
+      nudgeText.textContent = `You're in the top tier — every recharge now earns ₹${curBand.perExtra} more.`;
+      nudge.style.display = 'flex';
+    } else if (!next) {
       nudgeText.textContent = "You've maxed out today's slabs.";
       nudge.style.display = 'flex';
     } else if (todayRecharges === 0) {
@@ -4610,10 +4704,17 @@ async function openIncentiveInfo() {
   hideMsg('incError');
   try {
     if (state.incentiveSlabsAll.length === 0) await loadIncentiveConfig();
+    state.incView = todayDayType();  // v6.6 — default to today's day-type card
     renderIncentiveInfo();
   } catch (e) {
     showError('incError', 'Could not load incentive info. Try again.');
   }
+}
+
+// v6.6 — Weekday / Weekend toggle on the Incentive Structure screen.
+function setIncView(dt) {
+  state.incView = dt;
+  renderIncentiveInfo();
 }
 
 function renderIncentiveInfo() {
@@ -4626,16 +4727,33 @@ function renderIncentiveInfo() {
     subtitle.style.display = 'none';
   }
 
-  const slabsForUser = slabsForCity();
+  // v6.6 — reflect the selected day type in the toggle.
+  const dt = state.incView || todayDayType();
+  document.querySelectorAll('#incDayToggle .perf-period-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.dt === dt);
+  });
+
+  // Range bands for the selected day type, ascending by Min.
+  const bands = slabsForCity(dt);
+  const fmtRange = function(b) {
+    if (b.max == null)      return `${b.min}+ recharges`;
+    if (b.max === b.min)    return `${b.min} recharges`;
+    return `${b.min}–${b.max} recharges`;
+  };
+  const fmtPayout = function(b) {
+    if ((b.perExtra || 0) > 0) return `₹${b.incentive} + ₹${b.perExtra}/recharge`;
+    return `₹${b.incentive}`;
+  };
   const slabsTable = document.getElementById('incSlabsTable');
-  slabsTable.innerHTML = `
-    <div class="inc-row inc-header"><span class="inc-key">Recharges</span><span class="inc-val">Incentive</span></div>
-    ${slabsForUser
-      .slice()
-      .sort((a, b) => a.recharges - b.recharges)
-      .map(s => `<div class="inc-row"><span class="inc-key">${s.recharges} recharges</span><span class="inc-val">₹${s.incentive}</span></div>`)
-      .join('')}
-  `;
+  if (bands.length) {
+    slabsTable.innerHTML = `
+      <div class="inc-row inc-header"><span class="inc-key">Recharges</span><span class="inc-val">Incentive</span></div>
+      ${bands.map(b => `<div class="inc-row"><span class="inc-key">${fmtRange(b)}</span><span class="inc-val">${fmtPayout(b)}</span></div>`).join('')}
+    `;
+  } else {
+    slabsTable.innerHTML = `<div class="inc-row"><span class="inc-key">No ${dt} slabs set</span><span class="inc-val">—</span></div>`;
+  }
+
   const bonusForUser = bonusForCity();
   const bonusTable = document.getElementById('incBonusTable');
   bonusTable.innerHTML = `
