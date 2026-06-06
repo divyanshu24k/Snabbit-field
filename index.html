@@ -7,8 +7,31 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.4
+  VERSION     : 6.5
   LAST UPDATED: June 2026
+
+  CHANGES IN v6.5 (My Performance — Target vs Performance):
+    1. The performance hero now shows a "Target" card under the recharge
+       number: actual / target, an attainment % badge, and a progress bar.
+       Shown for ALL four period tabs (Today / Yesterday / Week / Month).
+    2. Targets are read from a new "Target" tab in the Incentive Config
+       sheet, City-keyed like Slabs/Bonus. Columns:
+          City | Weekday Target | Weekend Target
+       A City=ALL row acts as the default; a city-specific row overrides it.
+    3. Weekday/weekend split: Sat + Sun are weekend, Mon–Fri are weekday.
+       The daily target is rolled up to match the selected period by
+       classifying each calendar day in the window:
+          Today     -> today's day-type target
+          Yesterday -> yesterday's day-type target
+          Week      -> sum over rolling last 7 days  (= 5x weekday + 2x weekend)
+          Month     -> sum over rolling last 30 days (actual day-type mix)
+    4. New state field state.targetsAll; new helpers targetForCity(),
+       targetForPeriod(), isWeekendDay(). The Target tab is OPTIONAL — if it
+       is missing or empty the card is simply hidden (no error), and the rest
+       of the performance screen is unaffected.
+    5. FRONTEND-ONLY change — the app only READS the new tab via the same
+       gviz CSV path as Slabs/Bonus. No Apps Script change, no redeploy.
+    (Includes everything from v6.4 below.)
 
   CHANGES IN v6.4 (Offline Branding — Planned box gated by column R):
     1. The "Planned" field in EVERY branding form (single-form types and the
@@ -992,6 +1015,41 @@
     font-size: 13px; font-weight: 500; color: var(--navy); line-height: 1.4;
   }
 
+  /* TARGET vs PERFORMANCE CARD (v6.5) */
+  .perf-target-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px; margin-bottom: 14px;
+  }
+  .perf-target-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .perf-target-label {
+    font-size: 11px; font-weight: 500; color: var(--muted-light);
+    letter-spacing: 0.6px; text-transform: uppercase;
+  }
+  .perf-target-pct {
+    font-size: 12px; font-weight: 600; padding: 2px 9px;
+    border-radius: 999px; font-variant-numeric: tabular-nums;
+    background: var(--accent-soft); color: var(--accent-dark);
+  }
+  .perf-target-pct.hit { background: var(--success-soft); color: var(--success); }
+  .perf-target-figure {
+    font-size: 22px; font-weight: 600; color: var(--navy);
+    font-variant-numeric: tabular-nums; letter-spacing: -0.3px; margin-bottom: 10px;
+  }
+  .perf-target-figure .tgt-actual { color: var(--accent); }
+  .perf-target-figure .tgt-sep    { color: var(--muted-light); font-weight: 400; margin: 0 5px; }
+  .perf-target-figure .tgt-goal   { color: var(--navy); }
+  .perf-target-bar {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 999px; height: 8px; overflow: hidden;
+  }
+  .perf-target-bar-fill {
+    height: 100%; background: var(--accent); border-radius: 999px; transition: width 0.4s;
+  }
+  .perf-target-bar-fill.hit { background: var(--success); }
+
   /* ── ONBOARDING ── */
   .onb-intro {
     background: var(--surface2); border: 1px solid var(--border);
@@ -1801,6 +1859,18 @@
       <div class="perf-hero-sub" id="perfNextSlab">—</div>
       <div class="perf-progress-wrap"><div class="perf-progress-fill" id="perfProgressFill" style="width:0%"></div></div>
       <div class="perf-progress-text" id="perfProgressText">—</div>
+    </div>
+
+    <!-- Target vs performance (v6.5) — hidden when no target is configured -->
+    <div class="perf-target-card" id="perfTargetCard" style="display:none">
+      <div class="perf-target-head">
+        <div class="perf-target-label" id="perfTargetLabel">Target</div>
+        <div class="perf-target-pct" id="perfTargetPct">—</div>
+      </div>
+      <div class="perf-target-figure">
+        <span class="tgt-actual" id="perfTargetActual">0</span><span class="tgt-sep">/</span><span class="tgt-goal" id="perfTargetGoal">0</span>
+      </div>
+      <div class="perf-target-bar"><div class="perf-target-bar-fill" id="perfTargetBarFill" style="width:0%"></div></div>
     </div>
 
     <!-- Slab nudge card — only on Today tab -->
@@ -2697,6 +2767,7 @@ let state = {
   incentiveSlabsAll: [],   // [{city, recharges, incentive}, ...]
   topBonusAll:       [],   // [{city, rank, bonus}, ...]
   campaignInfo:      null, // { name, start, end, announcement }
+  targetsAll:        [],   // v6.5 — [{city, weekdayTarget, weekendTarget}] from Incentive Config "Target" tab
   lbView:            'national', // 'national' | 'city'
   lbPeriod:          'today',    // 'today' | 'yesterday' | 'week' | 'month' (week=last 7d, month=last 30d)
   userCity:          '',   // derived from logged-in agent's row in performance sheet (raw, lowercase)
@@ -2994,7 +3065,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, targetsAll:[], lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -3958,11 +4029,14 @@ function leaderboardDataForPeriod(period) {
 // ─────────────────────────────────────────────────────────
 async function loadIncentiveConfig() {
   const base = `https://docs.google.com/spreadsheets/d/${CONFIG.INCENTIVE_CONFIG_SHEET_ID}/gviz/tq?tqx=out:csv`;
-  const [activeText, slabsText, bonusText] = await Promise.all([
+  const [activeText, slabsText, bonusText, targetText] = await Promise.all([
     fetch(base + '&sheet=Active').then(r => r.text()),
     fetch(base + '&sheet=Slabs').then(r => r.text()),
     fetch(base + '&sheet=Bonus').then(r => r.text()),
+    fetch(base + '&sheet=Target').then(r => r.text()).catch(() => ''),  // v6.5 — optional tab
   ]);
+  // Only the three core tabs gate the "sheet not shared" error. The Target tab
+  // is optional — a missing/empty/erroring Target tab must NOT break this load.
   const anyHtml = [activeText, slabsText, bonusText].some(t => t.trim().startsWith('<!DOCTYPE') || t.trim().startsWith('<html'));
   if (anyHtml) throw new Error('INCENTIVE_SHEET_ACCESS_DENIED');
 
@@ -4018,6 +4092,33 @@ async function loadIncentiveConfig() {
       bonus: parseInt(String((bBonusIdx >= 0 ? r[bBonusIdx] : r[1]) || '0').replace(/[^0-9-]/g, ''), 10) || 0,
     }))
     .filter(b => !isNaN(b.rank));
+
+  // v6.5 — Target tab — City | Weekday Target | Weekend Target.
+  // Optional and fully defensive: any failure leaves state.targetsAll = [].
+  state.targetsAll = [];
+  try {
+    const tRows = parseCSV(targetText || '');
+    const tHeaderIdx = tRows.findIndex(r => r.some(c => {
+      const s = String(c).toLowerCase();
+      return s.includes('weekday') || s.includes('weekend');
+    }));
+    if (tHeaderIdx >= 0) {
+      const tHeader = tRows[tHeaderIdx].map(c => String(c).toLowerCase().trim());
+      const tCityIdx = tHeader.findIndex(c => c === 'city' || c.includes('city'));
+      const tWdIdx   = tHeader.findIndex(c => c.includes('weekday'));
+      const tWeIdx   = tHeader.findIndex(c => c.includes('weekend'));
+      state.targetsAll = tRows.slice(tHeaderIdx + 1)
+        .map(r => ({
+          city:          tCityIdx >= 0 ? String(r[tCityIdx] || 'ALL').trim() : 'ALL',
+          weekdayTarget: parseInt(String((tWdIdx >= 0 ? r[tWdIdx] : '') || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+          weekendTarget: parseInt(String((tWeIdx >= 0 ? r[tWeIdx] : '') || '0').replace(/[^0-9-]/g, ''), 10) || 0,
+        }))
+        .filter(t => t.city && (t.weekdayTarget > 0 || t.weekendTarget > 0));
+    }
+  } catch (e) {
+    console.warn('[loadIncentiveConfig] Target tab parse skipped (optional):', e);
+    state.targetsAll = [];
+  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -4057,6 +4158,66 @@ function hasCityOverride() {
   const slabHit  = state.incentiveSlabsAll.some(s => s.city && s.city.toLowerCase() === city);
   const bonusHit = state.topBonusAll.some(b => b.city && b.city.toLowerCase() === city);
   return slabHit || bonusHit;
+}
+
+// ─────────────────────────────────────────────────────────
+// TARGET HELPERS (v6.5)
+// Per-city daily targets with weekday/weekend split. City-specific row
+// wins; else the ALL default row. Rolled up to match the selected period.
+// ─────────────────────────────────────────────────────────
+
+// Resolve the daily target row for the logged-in user's city (or ALL).
+// Returns {city, weekdayTarget, weekendTarget} or null when none configured.
+function targetForCity() {
+  const city = (state.userCity || '').toLowerCase();
+  let row = null;
+  if (city) {
+    row = state.targetsAll.find(t => t.city && t.city.toLowerCase() === city) || null;
+  }
+  if (!row) {
+    row = state.targetsAll.find(t => (t.city || '').toUpperCase() === 'ALL') || null;
+  }
+  return row;
+}
+
+// Sat (6) + Sun (0) are weekend. Uses local day-of-week (no DST in IST).
+function isWeekendDay(d) {
+  const dow = d.getDay();
+  return dow === 0 || dow === 6;
+}
+
+// Roll the per-city daily target up to the selected period by classifying
+// every calendar day in that period's window (so the weekday/weekend mix is
+// exact). Returns 0 when no target is configured for the user.
+//   today     -> today's day-type target
+//   yesterday -> yesterday's day-type target
+//   week       -> sum over rolling last 7 days (5 weekday + 2 weekend)
+//   month      -> sum over rolling last 30 days (actual day-type mix)
+function targetForPeriod(period) {
+  const t = targetForCity();
+  if (!t) return 0;
+  const wd = t.weekdayTarget || 0;
+  const we = t.weekendTarget || 0;
+
+  const days = [];
+  if (period === 'today') {
+    days.push(startOfToday());
+  } else {
+    const range = periodRange(period);  // {start, end}, end exclusive
+    if (!range) {
+      days.push(startOfToday());
+    } else {
+      const cur = new Date(range.start);
+      while (cur < range.end) {
+        days.push(new Date(cur));
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+  }
+
+  let total = 0;
+  for (const d of days) total += isWeekendDay(d) ? we : wd;
+  return total;
 }
 
 // Given a recharge count, return the incentive earned (highest slab they cleared).
@@ -4230,6 +4391,34 @@ function renderPerformance() {
     ann.style.display = 'block';
   } else {
     ann.style.display = 'none';
+  }
+
+  // ── Target vs performance (v6.5) ───────────────────────────
+  // Compares the period's actual (displayRecharges) against the rolled-up
+  // per-city target. Hidden entirely when no target is configured.
+  const tgtCard = document.getElementById('perfTargetCard');
+  const tgt = targetForPeriod(state.perfPeriod);
+  if (tgt > 0) {
+    const tgtLabel = {
+      today:     'Target · Today',
+      yesterday: 'Target · Yesterday',
+      week:      'Target · Last 7 days',
+      month:     'Target · Last 30 days',
+    }[state.perfPeriod] || 'Target';
+    const pct = Math.round((displayRecharges / tgt) * 100);
+    const hit = displayRecharges >= tgt;
+    document.getElementById('perfTargetLabel').textContent  = tgtLabel;
+    document.getElementById('perfTargetActual').textContent = displayRecharges;
+    document.getElementById('perfTargetGoal').textContent   = tgt;
+    const pctEl = document.getElementById('perfTargetPct');
+    pctEl.textContent = pct + '%';
+    pctEl.classList.toggle('hit', hit);
+    const fill = document.getElementById('perfTargetBarFill');
+    fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    fill.classList.toggle('hit', hit);
+    tgtCard.style.display = 'block';
+  } else {
+    tgtCard.style.display = 'none';
   }
 
   document.getElementById('perfLoading').style.display = 'none';
