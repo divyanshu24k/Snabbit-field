@@ -7,8 +7,36 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.6
+  VERSION     : 6.7
   LAST UPDATED: June 2026
+
+  CHANGES IN v6.7 (TL Incentive Tracker — new feature):
+    1. NEW FEATURE: "TL Tracker" (Performance group on home). Gated by a new
+       dedicated Login Credentials column "TL Tracker Access" (TRUE/blank),
+       read by header match (state.tlTrackerAccess). Persisted in session.
+    2. Reads the COMPUTED columns of the TL_Incentive tab in the existing
+       PERFORMANCE_SHEET_ID (gviz CSV, &sheet=TL_Incentive). The tab's own
+       formulas (off Live_Recharges_Data) keep target/achieved/%/incentive
+       live — NO incentive math runs client-side. FRONTEND-ONLY, no redeploy.
+    3. Layout read from the tab: TL Name | City | Structure | W1..W4
+       (Target/Ach/%/Incentive each) | Mo (Target/Ach/Incentive), plus a
+       WEEK CONFIG block (Week | Start | End) and a TL Code column at col AT.
+       Columns are matched by header text; TL Code falls back to col AT (45)
+       if no 'code' header is present.
+    4. Identity: the logged-in TL is matched to their row by TL code
+       (state.agentCode == TL Code). Period tabs W1/W2/W3/W4/Month default to
+       the week containing today (from WEEK CONFIG dates).
+    5. PRIVACY: achievement + rank are shown to every TL with access (the
+       leaderboard, ranked by achievement, ties share rank). The incentive
+       figure is rendered ONLY in the logged-in TL's own card — the leaderboard
+       shows no incentive for anyone. NOTE: this is UI-level masking; because
+       the spreadsheet is link-shared and its ID ships in the app, the raw
+       numbers remain fetchable via the CSV URL by a determined user.
+    6. New state fields: tlTrackerAccess, tlData, tlWeeks, tlMonth, tlPeriod,
+       tlMe. New CONFIG.TL_TRACKER_TAB. New helpers _tlInt/_tlDate/_tlFmtShort,
+       loadTLTracker/currentTLWeek/tlMetricFor/openTLTracker/setTLPeriod/
+       renderTLTracker. Reuses existing perf-* / lb-* components (no new CSS).
+    (Includes everything from v6.6 below.)
 
   CHANGES IN v6.6 (Incentive — weekday/weekend rates + range bands):
     1. The Slabs tab moves from threshold rows (City | Recharges | Incentive)
@@ -1993,6 +2021,58 @@
 </div>
 
 
+<!-- ════════════════ SCREEN: TL TRACKER (v6.7) ════════════════ -->
+<div class="screen" id="screen-tl-tracker">
+  <div class="big-label">TL Tracker</div>
+  <div class="big-title">Weekly Performance</div>
+  <p class="sub">Your target, achievement & incentive — updates live.</p>
+  <div id="tlError" class="error-msg"></div>
+  <div id="tlLoading" class="loading"><div class="spinner"></div> Loading your tracker…</div>
+
+  <div id="tlContent" style="display:none">
+
+    <!-- Period tabs (W1 / W2 / W3 / W4 / Month) — built in renderTLTracker() -->
+    <div class="perf-period-tabs" id="tlPeriodTabs"></div>
+
+    <!-- Personal block — own achievement, target, and incentive (incentive is private) -->
+    <div id="tlPersonal" style="display:none">
+      <div class="perf-hero">
+        <div class="perf-hero-label" id="tlHeroLabel">Achieved</div>
+        <div class="perf-hero-number" id="tlHeroAch">0</div>
+        <div class="perf-hero-sub" id="tlHeroSub">—</div>
+      </div>
+
+      <!-- Target vs achieved (reuses the v6.5 target component) -->
+      <div class="perf-target-card" id="tlTargetCard" style="display:none">
+        <div class="perf-target-head">
+          <div class="perf-target-label" id="tlTargetLabel">Target</div>
+          <div class="perf-target-pct" id="tlTargetPct">—</div>
+        </div>
+        <div class="perf-target-figure">
+          <span class="tgt-actual" id="tlTargetActual">0</span><span class="tgt-sep">/</span><span class="tgt-goal" id="tlTargetGoal">0</span>
+        </div>
+        <div class="perf-target-bar"><div class="perf-target-bar-fill" id="tlTargetBarFill" style="width:0%"></div></div>
+      </div>
+
+      <!-- Rank + incentive (incentive shown to this TL only) -->
+      <div class="perf-stats-row">
+        <div class="perf-stat-card"><div class="perf-stat-value" id="tlRank">—</div><div class="perf-stat-label">Rank</div></div>
+        <div class="perf-stat-card"><div class="perf-stat-value" id="tlPeriodIncentive">₹0</div><div class="perf-stat-label" id="tlPeriodIncentiveLabel">This week</div></div>
+        <div class="perf-stat-card"><div class="perf-stat-value" id="tlMonthIncentive">₹0</div><div class="perf-stat-label">Month total</div></div>
+      </div>
+    </div>
+
+    <!-- Shown when the logged-in TL's code isn't in this month's tracker -->
+    <div class="info-box" id="tlNotInList" style="display:none">Your TL code isn't in this month's tracker yet — contact your City Head.</div>
+
+    <!-- Leaderboard — every TL with access sees this; ranked by achievement. No incentive shown here. -->
+    <div class="perf-section-label">Leaderboard — by achievement</div>
+    <div class="lb-list" id="tlLbList"></div>
+  </div>
+</div>
+
+
+
 <!-- ════════════════ SCREEN: SLOT CHECKER ════════════════ -->
 <div class="screen" id="screen-slot-checker">
   <div class="big-label">Slot Checker</div>
@@ -2716,6 +2796,10 @@ const CONFIG = {
   SUBMIT_SHEET_ID: '1GvCUiO1QclTwu7uwbkRVeswIxhpKPqdzVttir_CnSQU',
   BLAST_SHEET_ID:  '1xMXKkS27fIfzMyMmUFdMiw99UQM6ZYZlcPHETwnPCVs',
   PERFORMANCE_SHEET_ID:      '1sCzhhkVlrSijVNwo9NwDVxldv1E7y2Xjh53Z3PPoyWU',
+  // v6.7 — TL Incentive live tracker. Same spreadsheet as PERFORMANCE_SHEET_ID,
+  // a separate tab. The app reads the COMPUTED columns (the tab's own formulas
+  // off Live_Recharges_Data keep them live); no incentive math runs client-side.
+  TL_TRACKER_TAB:            'TL_Incentive',
   INCENTIVE_CONFIG_SHEET_ID: '11XgLAKpWjzSq8jZAZfqq7R83zEx-M0jH3FGga6qnWj8',
   SLOT_CHECKER_SHEET_ID:     '1PzO_a9cwBbgvAvjNhCgu8UWgecdTKH37Q-rbIQI0f6o',
   // v5.4 — Inventory module (sheets created and wired in)
@@ -2855,15 +2939,22 @@ let state = {
   societyMaster:            {},     // { cityLower: [{society_name, nm_name, mm_name}, ...] }
   societyMasterLoaded:      {},     // { cityLower: true } — lazy-loaded per city
   paymentsFiles:            {},     // { slotKey: {base64, mime, filename, size} } for the open form
+  // v6.7 — TL Incentive live tracker
+  tlTrackerAccess:          false,  // creds column "TL Tracker Access"
+  tlData:                   [],     // [{code, name, city, structure, w:[{target,ach,inc} x4], mo:{target,ach,inc}}]
+  tlWeeks:                  [],     // [{key:'W1', label, start:Date, end:Date}] (weeks only)
+  tlMonth:                  null,   // {key:'MONTH', label, start, end} or null
+  tlPeriod:                 '',     // selected period: 'W1'..'W4' | 'MONTH'
+  tlMe:                     null,   // matched TL row (by TL code) or null
 };
 
 
 // ─────────────────────────────────────────────────────────
 // SESSION
 // ─────────────────────────────────────────────────────────
-function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess) {
+function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess, tlTrackerAccess) {
   const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
-  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess, expiry }));
+  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess, tlTrackerAccess, expiry }));
 }
 function loadSession() {
   try {
@@ -3012,6 +3103,8 @@ async function loadCreds() {
     brandingIdx:    h.findIndex(c => c.includes('branding')),
     // v5.9 — Payments access (column T — payments access). Free-text, comma-separated codes.
     paymentsIdx:    h.findIndex(c => c.includes('payments') && c.includes('access')),
+    // v6.7 — TL Tracker access (new dedicated column). Boolean (TRUE/blank). Header match, not positional.
+    tlTrackerIdx:   h.findIndex(c => c.includes('tracker') || (c.includes('tl') && c.includes('tracker'))),
   };
 }
 
@@ -3027,7 +3120,7 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx, brandingIdx, paymentsIdx } = await loadCreds();
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx, brandingIdx, paymentsIdx, tlTrackerIdx } = await loadCreds();
     const match = rows.slice(headerIdx + 1).find(r =>
       String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
       String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
@@ -3059,12 +3152,14 @@ async function doLogin() {
     state.brandingPlannedAccess    = String(match[17] || '').trim().toLowerCase() === 'central';
     // v5.9 — Payments access (parse comma-separated codes from column T)
     state.paymentsAccess           = paymentsIdx >= 0 ? parsePaymentsAccess(match[paymentsIdx]) : [];
+    // v6.7 — TL Tracker access (dedicated boolean column)
+    state.tlTrackerAccess          = tlTrackerIdx >= 0 ? toBoolean(match[tlTrackerIdx]) : false;
 
     // If user has leaderboard access but never onboarded AND has no name in column M,
     // force them through the one-time onboarding form before home.
     const needsOnboarding = state.leaderboardAccess && !state.onboarded && !state.displayName;
 
-    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess, state.brandingPlannedAccess);
+    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess, state.brandingPlannedAccess, state.tlTrackerAccess);
     if (needsOnboarding) {
       // Cache duplicates list for warning before they pick a code.
       state._allRefCodes = rows.slice(headerIdx + 1)
@@ -3101,7 +3196,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, targetsAll:[], incView:'weekday', lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{} };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, targetsAll:[], incView:'weekday', lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{}, tlTrackerAccess:false, tlData:[], tlWeeks:[], tlMonth:null, tlPeriod:'', tlMe:null };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -3124,6 +3219,7 @@ function renderHomeCards() {
     { group:'Field work', icon:'ti-receipt-rupee',      title:'Payments',        sub:'Reimbursements, vendor invoices',      access: (state.paymentsAccess || []).length > 0, action:'startPayments()' },
     // PERFORMANCE
     { group:'Performance', icon:'ti-trophy',            title:'My performance',  sub:'Rank & incentive earned',              access: state.leaderboardAccess, action:'openPerformance()' },
+    { group:'Performance', icon:'ti-target-arrow',      title:'TL Tracker',      sub:'Weekly target & incentive',            access: state.tlTrackerAccess,   action:'openTLTracker()' },
     { group:'Performance', icon:'ti-activity',          title:'Slot checker',    sub:'Live jobs & utilization',              access: state.slotCheckerAccess, action:'startSlotChecker()' },
     // INVENTORY
     { group:'Inventory',   icon:'ti-chart-bar',         title:'Dashboard',       sub:'Stock across cities',                  access: state.inventoryDashboardAccess, action:'openInventoryDashboard()' },
@@ -4763,6 +4859,303 @@ function renderIncentiveInfo() {
 }
 
 
+// ═════════════════════════════════════════════════════════════
+// TL INCENTIVE TRACKER (v6.7)
+// ═════════════════════════════════════════════════════════════
+// Reads the COMPUTED columns of the TL_Incentive tab (gviz CSV). The tab's own
+// formulas (off Live_Recharges_Data) keep target/achieved/%/incentive live — no
+// incentive math runs here. Layout mirrors the reference CSV:
+//   TL Name | City | Structure | W1 Target | W1 Ach | W1 % | W1 Incentive | …W4… | Mo … 
+//   + a WEEK CONFIG block (Week | Start | End) and a TL Code column (col AT).
+// Privacy: achievement + rank are shown to every TL with access; the incentive
+// figure is rendered ONLY in the logged-in TL's own card. The leaderboard never
+// shows any incentive. (UI-level masking — see deploy notes.)
+// ─────────────────────────────────────────────────────────
+
+// Clean integer from cells like "₹1,500", "3,840", "510". '' / junk -> 0.
+function _tlInt(v) {
+  if (v === null || v === undefined) return 0;
+  const s = String(v).replace(/[^0-9-]/g, '');
+  const n = parseInt(s, 10);
+  return isNaN(n) ? 0 : n;
+}
+
+// Parse a date cell. Handles 'YYYY-MM-DD', gviz 'Date(y,m,d)', and ISO-ish.
+// Returns a local-midnight Date or null.
+function _tlDate(v) {
+  const s = String(v || '').trim();
+  if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  m = s.match(/^Date\((\d+),(\d+),(\d+)/);          // gviz 0-indexed month
+  if (m) return new Date(+m[1], +m[2], +m[3]);
+  const t = Date.parse(s);
+  if (!isNaN(t)) { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  return null;
+}
+
+function _tlFmtShort(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+  const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return d.getDate() + ' ' + mo[d.getMonth()];
+}
+
+// Always re-fetches (the tracker is "live"); no session cache.
+async function loadTLTracker() {
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(CONFIG.TL_TRACKER_TAB)}`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('TL_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
+
+  // Main-table header row: has a 'tl name' cell AND a 'w1 …' cell.
+  const hIdx = rows.findIndex(r =>
+    r.some(c => String(c).toLowerCase().trim() === 'tl name') &&
+    r.some(c => /w1/.test(String(c).toLowerCase()))
+  );
+  if (hIdx === -1) throw new Error('TL_HEADER_NOT_FOUND');
+  const h = rows[hIdx].map(c => String(c).toLowerCase().trim());
+  const find = pred => h.findIndex(pred);
+
+  const iName   = find(c => c === 'tl name' || (c.includes('tl') && c.includes('name')));
+  const iCity   = find(c => c === 'city' || c.includes('city'));
+  const iStruct = find(c => c === 'structure' || c.includes('structure'));
+  // TL Code: prefer a header containing 'code'; fall back to the agreed column AT (index 45).
+  let iCode = find(c => c.includes('code'));
+  if (iCode === -1) iCode = 45;
+
+  // Per-week (W1..W4) and Month column indices, matched by header text.
+  const weekCols = [];
+  for (let n = 1; n <= 4; n++) {
+    weekCols.push({
+      target: find(c => c.includes('w' + n) && c.includes('target')),
+      ach:    find(c => c.includes('w' + n) && c.includes('ach')),
+      inc:    find(c => c.includes('w' + n) && c.includes('incentive')),
+    });
+  }
+  const moCols = {
+    target: find(c => (c.startsWith('mo') || c.includes('month')) && c.includes('target')),
+    ach:    find(c => (c.startsWith('mo') || c.includes('month')) && c.includes('ach')),
+    inc:    find(c => (c.startsWith('mo') || c.includes('month')) && c.includes('incentive')),
+  };
+
+  // Read main table downward until the TL Name column goes blank (stops before
+  // the lower leaderboard block in the same sheet).
+  const tls = [];
+  for (let i = hIdx + 1; i < rows.length; i++) {
+    const r = rows[i];
+    const name = String(r[iName] || '').trim();
+    if (!name) break;
+    const w = weekCols.map(wc => ({
+      target: wc.target >= 0 ? _tlInt(r[wc.target]) : 0,
+      ach:    wc.ach    >= 0 ? _tlInt(r[wc.ach])    : 0,
+      inc:    wc.inc    >= 0 ? _tlInt(r[wc.inc])    : 0,
+    }));
+    const mo = {
+      target: moCols.target >= 0 ? _tlInt(r[moCols.target]) : 0,
+      ach:    moCols.ach    >= 0 ? _tlInt(r[moCols.ach])    : 0,
+      inc:    moCols.inc    >= 0 ? _tlInt(r[moCols.inc])    : 0,
+    };
+    tls.push({
+      code:      String((iCode >= 0 ? r[iCode] : '') || '').trim(),
+      name,
+      city:      String(r[iCity]   || '').trim(),
+      structure: String(r[iStruct] || '').trim(),
+      w, mo,
+    });
+  }
+  state.tlData = tls;
+
+  // WEEK CONFIG block — header row with a 'week' cell and a 'start' cell.
+  state.tlWeeks = [];
+  state.tlMonth = null;
+  const wcIdx = rows.findIndex(r =>
+    r.some(c => String(c).toLowerCase().trim() === 'week') &&
+    r.some(c => String(c).toLowerCase().trim() === 'start')
+  );
+  if (wcIdx >= 0) {
+    const wh = rows[wcIdx].map(c => String(c).toLowerCase().trim());
+    const cWeek  = wh.findIndex(c => c === 'week');
+    const cStart = wh.findIndex(c => c === 'start');
+    const cEnd   = wh.findIndex(c => c === 'end');
+    let started = false;
+    for (let i = wcIdx + 1; i < rows.length; i++) {
+      const key = String(rows[i][cWeek] || '').trim();
+      if (!key) { if (started) break; else continue; }
+      started = true;
+      const start = _tlDate(rows[i][cStart]);
+      const end   = _tlDate(rows[i][cEnd]);
+      if (!start || !end) continue;
+      const isMonth = /month/i.test(key) || /^mo$/i.test(key);
+      const entry = { key: key.toUpperCase().replace(/\s+/g, ''), label: key, start, end };
+      if (isMonth) state.tlMonth = Object.assign({}, entry, { key: 'MONTH' });
+      else state.tlWeeks.push(entry);
+    }
+  }
+  state.tlWeeks.sort((a, b) => a.start - b.start);
+
+  // Identify the logged-in TL by code (the match key Vikas set in column AT).
+  const myCode = String(state.agentCode || '').trim().toLowerCase();
+  state.tlMe = myCode
+    ? (state.tlData.find(t => t.code && t.code.toLowerCase() === myCode) || null)
+    : null;
+
+  console.log(`[loadTLTracker] tls=${state.tlData.length} weeks=${state.tlWeeks.length} month=${!!state.tlMonth} me=${state.tlMe ? state.tlMe.name : 'none'}`);
+}
+
+// Metric block for a TL in a given period ('W1'..'W4' | 'MONTH').
+function tlMetricFor(tl, period) {
+  if (period === 'MONTH') return tl.mo;
+  const n = parseInt(String(period).replace(/\D/g, ''), 10);
+  return tl.w[n - 1] || { target: 0, ach: 0, inc: 0 };
+}
+
+// Which period to open on. The week whose [start,end] contains today; else the
+// first week (before the campaign) or the Month rollup (after it).
+function currentTLWeek() {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  for (const w of state.tlWeeks) {
+    if (today >= w.start && today <= w.end) return w.key;
+  }
+  if (state.tlWeeks.length) {
+    if (today < state.tlWeeks[0].start) return state.tlWeeks[0].key;
+    return state.tlMonth ? 'MONTH' : state.tlWeeks[state.tlWeeks.length - 1].key;
+  }
+  return state.tlMonth ? 'MONTH' : 'W1';
+}
+
+async function openTLTracker() {
+  navigate('screen-tl-tracker');
+  document.getElementById('tlLoading').style.display = 'flex';
+  document.getElementById('tlContent').style.display = 'none';
+  hideMsg('tlError');
+  try {
+    await loadTLTracker();
+    state.tlPeriod = currentTLWeek() || 'MONTH';
+    renderTLTracker();
+  } catch (e) {
+    document.getElementById('tlLoading').style.display = 'none';
+    if (e.message && e.message.includes('ACCESS_DENIED')) {
+      showError('tlError', 'TL tracker sheet is not shared. Please contact admin.');
+    } else if (e.message === 'TL_HEADER_NOT_FOUND') {
+      showError('tlError', 'Could not read the tracker layout. Please contact admin.');
+    } else {
+      showError('tlError', 'Could not load your tracker. Check your internet and try again.');
+    }
+  }
+}
+
+function setTLPeriod(period) {
+  state.tlPeriod = period;
+  renderTLTracker();
+}
+
+function renderTLTracker() {
+  const period = state.tlPeriod;
+
+  // Period tabs (columns always carry W1..W4 + Month).
+  const tabs = [
+    { key: 'W1', label: 'W1' }, { key: 'W2', label: 'W2' },
+    { key: 'W3', label: 'W3' }, { key: 'W4', label: 'W4' },
+    { key: 'MONTH', label: 'Month' },
+  ];
+  document.getElementById('tlPeriodTabs').innerHTML = tabs.map(t =>
+    `<button class="perf-period-btn${t.key === period ? ' active' : ''}" onclick="setTLPeriod('${t.key}')">${t.label}</button>`
+  ).join('');
+
+  // Date range for the hero subtitle.
+  let rangeLabel = '';
+  if (period === 'MONTH') {
+    if (state.tlMonth) rangeLabel = `${_tlFmtShort(state.tlMonth.start)} – ${_tlFmtShort(state.tlMonth.end)}`;
+  } else {
+    const w = state.tlWeeks.find(x => x.key === period);
+    if (w) rangeLabel = `${_tlFmtShort(w.start)} – ${_tlFmtShort(w.end)}`;
+  }
+
+  // Leaderboard data: every TL, ranked by achievement for this period (ties share rank).
+  const board = state.tlData
+    .map(t => Object.assign({}, t, { m: tlMetricFor(t, period) }))
+    .sort((a, b) => b.m.ach - a.m.ach);
+  let lastAch = null, lastRank = 0;
+  board.forEach((d, i) => {
+    if (d.m.ach !== lastAch) { lastRank = i + 1; lastAch = d.m.ach; }
+    d._rank = lastRank;
+  });
+
+  // Personal block (own achievement/target + private incentive).
+  const me = state.tlMe;
+  if (me) {
+    const mm = tlMetricFor(me, period);
+    const myRow = board.find(d => d.code && me.code && d.code.toLowerCase() === me.code.toLowerCase());
+    const myRank = myRow ? myRow._rank : null;
+
+    document.getElementById('tlHeroLabel').textContent = period === 'MONTH' ? 'Achieved this month' : `Achieved · ${period}`;
+    document.getElementById('tlHeroAch').textContent   = mm.ach;
+    document.getElementById('tlHeroSub').textContent   = rangeLabel || (me.city ? titleCaseCity(me.city) : '—');
+
+    const tgtCard = document.getElementById('tlTargetCard');
+    if (mm.target > 0) {
+      const pct = Math.round((mm.ach / mm.target) * 100);
+      const hit = mm.ach >= mm.target;
+      document.getElementById('tlTargetLabel').textContent  = period === 'MONTH' ? 'Month target' : `${period} target`;
+      document.getElementById('tlTargetActual').textContent = mm.ach;
+      document.getElementById('tlTargetGoal').textContent   = mm.target;
+      const pctEl = document.getElementById('tlTargetPct');
+      pctEl.textContent = pct + '%';
+      pctEl.classList.toggle('hit', hit);
+      const fill = document.getElementById('tlTargetBarFill');
+      fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      fill.classList.toggle('hit', hit);
+      tgtCard.style.display = 'block';
+    } else {
+      tgtCard.style.display = 'none';
+    }
+
+    document.getElementById('tlRank').textContent = myRank ? '#' + myRank : '—';
+    document.getElementById('tlPeriodIncentive').textContent = '₹' + (period === 'MONTH' ? me.mo.inc : mm.inc);
+    document.getElementById('tlPeriodIncentiveLabel').textContent = period === 'MONTH' ? 'Month incentive' : (period + ' incentive');
+    document.getElementById('tlMonthIncentive').textContent = '₹' + me.mo.inc;
+
+    document.getElementById('tlPersonal').style.display = 'block';
+    document.getElementById('tlNotInList').style.display = 'none';
+  } else {
+    document.getElementById('tlPersonal').style.display = 'none';
+    document.getElementById('tlNotInList').style.display = 'block';
+  }
+
+  // Leaderboard list — achievement + rank only; NO incentive shown for anyone.
+  const list = document.getElementById('tlLbList');
+  if (!board.length || board.every(d => d.m.ach === 0)) {
+    list.innerHTML = `<div class="lb-empty">No achievement data yet for this period.</div>`;
+  } else {
+    list.innerHTML = board.map(d => {
+      const isMe = !!(me && d.code && me.code && d.code.toLowerCase() === me.code.toLowerCase());
+      const struct   = d.structure ? `<span>${d.structure}</span>` : '';
+      const cityMeta = d.city ? `<span class="dot">·</span><span>${titleCaseCity(d.city)}</span>` : '';
+      return `
+        <div class="lb-row${isMe ? ' lb-me' : ''}">
+          <div class="lb-rank-tile">${d._rank}</div>
+          <div class="lb-info">
+            <div class="lb-info-name">${d.name}${isMe ? ' · You' : ''}</div>
+            <div class="lb-info-meta">${struct}${cityMeta}</div>
+          </div>
+          <div>
+            <div class="lb-recharges">${d.m.ach}</div>
+            <span class="lb-recharges-label">achieved</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  document.getElementById('tlLoading').style.display = 'none';
+  document.getElementById('tlContent').style.display = 'block';
+}
+
+
 // ─────────────────────────────────────────────────────────
 // SLOT CHECKER — read-only feature.
 // Reads the slot-checker sheet (single tab), parses hood/jobs/experts/utilization,
@@ -4932,6 +5325,7 @@ window.addEventListener('load', () => {
     state.brandingAccess    = session.brandingAccess    || false;
     state.brandingPlannedAccess = session.brandingPlannedAccess || false;  // v6.4
     state.paymentsAccess    = Array.isArray(session.paymentsAccess) ? session.paymentsAccess : [];
+    state.tlTrackerAccess   = session.tlTrackerAccess   || false;  // v6.7
     onLoggedIn();
   }
 });
