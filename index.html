@@ -2929,12 +2929,16 @@ let state = {
   brandingPlannedAccess:    false,  // v6.4 — column R == 'central' → show Planned box in all branding forms
   brandingType:             '',     // currently selected branding type (e.g. 'Pole_Banner')
   brandingSubmissionType:   '',     // 'Execution' or 'Audit' (only for audit-pattern types)
+  brandingBackendAvailable: null,
+  brandingBackendCheckedAt: 0,
   cityMmNmData:             [],     // [{city, mm, nm}] from Transfer_Tab — shared with branding cascading dropdowns
   cityMmNmLoaded:           false,
   // v5.9 — Payments module
   paymentsAccess:           [],     // array of sub-feature codes the user can access: ['SP10U','RMB',...]; ['ALL'] expanded to all 5
   paymentsConfig:           null,   // { SP10U: {is_active, window_start, window_end, label}, ... } from Payments_Config tab
   paymentsConfigLoaded:     false,
+  paymentsBackendAvailable: true,
+  paymentsConfigSource:     '',
   paymentsSubFeature:       '',     // currently selected sub-feature on the picker
   societyMaster:            {},     // { cityLower: [{society_name, nm_name, mm_name}, ...] }
   societyMasterLoaded:      {},     // { cityLower: true } — lazy-loaded per city
@@ -3055,6 +3059,21 @@ async function postToScript(payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
+}
+
+async function checkAppsScriptAction(action) {
+  const url = CONFIG.APPS_SCRIPT_URL + '?action=' + encodeURIComponent(action) + '&_ts=' + Date.now();
+  const res = await fetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error('APPS_SCRIPT_HTTP_' + res.status);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('APPS_SCRIPT_ACCESS_DENIED');
+  }
+  const data = JSON.parse(text);
+  if (!data || data.ok !== true) {
+    throw new Error(data && data.error ? data.error : 'APPS_SCRIPT_NOT_OK');
+  }
+  return data;
 }
 
 function toBoolean(val) {
@@ -4900,6 +4919,14 @@ function _tlFmtShort(d) {
   return d.getDate() + ' ' + mo[d.getMonth()];
 }
 
+function _tlNormName(v) {
+  return String(v || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 // Always re-fetches (the tracker is "live"); no session cache.
 async function loadTLTracker() {
   const url = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(CONFIG.TL_TRACKER_TAB)}`;
@@ -4911,10 +4938,19 @@ async function loadTLTracker() {
   const rows = parseCSV(text);
 
   // Main-table header row: has a 'tl name' cell AND a 'w1 …' cell.
-  const hIdx = rows.findIndex(r =>
+  let hIdx = rows.findIndex(r =>
     r.some(c => String(c).toLowerCase().trim() === 'tl name') &&
     r.some(c => /w1/.test(String(c).toLowerCase()))
   );
+  let usePositionalTrackerLayout = false;
+  if (hIdx === -1) {
+    hIdx = rows.findIndex(r =>
+      String(r[0] || '').toLowerCase().trim() === 'tl name' &&
+      String(r[1] || '').toLowerCase().trim() === 'city' &&
+      String(r[2] || '').toLowerCase().trim() === 'structure'
+    );
+    usePositionalTrackerLayout = hIdx >= 0;
+  }
   if (hIdx === -1) throw new Error('TL_HEADER_NOT_FOUND');
   const h = rows[hIdx].map(c => String(c).toLowerCase().trim());
   const find = pred => h.findIndex(pred);
@@ -4927,19 +4963,32 @@ async function loadTLTracker() {
   if (iCode === -1) iCode = 45;
 
   // Per-week (W1..W4) and Month column indices, matched by header text.
-  const weekCols = [];
-  for (let n = 1; n <= 4; n++) {
-    weekCols.push({
-      target: find(c => c.includes('w' + n) && c.includes('target')),
-      ach:    find(c => c.includes('w' + n) && c.includes('ach')),
-      inc:    find(c => c.includes('w' + n) && c.includes('incentive')),
-    });
+  let weekCols = [];
+  let moCols;
+  if (usePositionalTrackerLayout) {
+    // Current exported TL_Incentive layout has merged/blank week headers in CSV:
+    // A:C identity, D:G W1, H:K W2, L:O W3, P:S W4, T:W Month.
+    weekCols = [
+      { target: 3,  ach: 4,  inc: 6  },
+      { target: 7,  ach: 8,  inc: 10 },
+      { target: 11, ach: 12, inc: 14 },
+      { target: 15, ach: 16, inc: 18 },
+    ];
+    moCols = { target: 19, ach: 20, inc: 22 };
+  } else {
+    for (let n = 1; n <= 4; n++) {
+      weekCols.push({
+        target: find(c => c.includes('w' + n) && c.includes('target')),
+        ach:    find(c => c.includes('w' + n) && c.includes('ach')),
+        inc:    find(c => c.includes('w' + n) && c.includes('incentive')),
+      });
+    }
+    moCols = {
+      target: find(c => (c.startsWith('mo') || c.includes('month')) && c.includes('target')),
+      ach:    find(c => (c.startsWith('mo') || c.includes('month')) && c.includes('ach')),
+      inc:    find(c => (c.startsWith('mo') || c.includes('month')) && c.includes('incentive')),
+    };
   }
-  const moCols = {
-    target: find(c => (c.startsWith('mo') || c.includes('month')) && c.includes('target')),
-    ach:    find(c => (c.startsWith('mo') || c.includes('month')) && c.includes('ach')),
-    inc:    find(c => (c.startsWith('mo') || c.includes('month')) && c.includes('incentive')),
-  };
 
   // Read main table downward until the TL Name column goes blank (stops before
   // the lower leaderboard block in the same sheet).
@@ -4971,15 +5020,25 @@ async function loadTLTracker() {
   // WEEK CONFIG block — header row with a 'week' cell and a 'start' cell.
   state.tlWeeks = [];
   state.tlMonth = null;
-  const wcIdx = rows.findIndex(r =>
+  let wcIdx = rows.findIndex(r =>
     r.some(c => String(c).toLowerCase().trim() === 'week') &&
     r.some(c => String(c).toLowerCase().trim() === 'start')
   );
+  let usePositionalWeekConfig = false;
+  if (wcIdx === -1) {
+    wcIdx = rows.findIndex((r, idx) =>
+      String(r[26] || '').toLowerCase().trim() === 'week' &&
+      rows[idx + 1] &&
+      _tlDate(rows[idx + 1][27]) &&
+      _tlDate(rows[idx + 1][28])
+    );
+    usePositionalWeekConfig = wcIdx >= 0;
+  }
   if (wcIdx >= 0) {
     const wh = rows[wcIdx].map(c => String(c).toLowerCase().trim());
-    const cWeek  = wh.findIndex(c => c === 'week');
-    const cStart = wh.findIndex(c => c === 'start');
-    const cEnd   = wh.findIndex(c => c === 'end');
+    const cWeek  = usePositionalWeekConfig ? 26 : wh.findIndex(c => c === 'week');
+    const cStart = usePositionalWeekConfig ? 27 : wh.findIndex(c => c === 'start');
+    const cEnd   = usePositionalWeekConfig ? 28 : wh.findIndex(c => c === 'end');
     let started = false;
     for (let i = wcIdx + 1; i < rows.length; i++) {
       const key = String(rows[i][cWeek] || '').trim();
@@ -4998,9 +5057,17 @@ async function loadTLTracker() {
 
   // Identify the logged-in TL by code (the match key Vikas set in column AT).
   const myCode = String(state.agentCode || '').trim().toLowerCase();
-  state.tlMe = myCode
+  let me = myCode
     ? (state.tlData.find(t => t.code && t.code.toLowerCase() === myCode) || null)
     : null;
+  if (!me) {
+    const nameKeys = [state.agentName, state.displayName, state.username]
+      .map(_tlNormName)
+      .filter(Boolean);
+    const nameMatches = state.tlData.filter(t => nameKeys.includes(_tlNormName(t.name)));
+    if (nameMatches.length === 1) me = nameMatches[0];
+  }
+  state.tlMe = me;
 
   console.log(`[loadTLTracker] tls=${state.tlData.length} weeks=${state.tlWeeks.length} month=${!!state.tlMonth} me=${state.tlMe ? state.tlMe.name : 'none'}`);
 }
@@ -7249,7 +7316,29 @@ const BRANDING_REPLACEMENT_TYPES = {
 function startBranding() {
   // Kick off the City/MM/NM load in the background (no await — picker doesn't need it yet).
   loadCityMmNmData();
+  checkBrandingBackend({ silent: true });
   navigate('screen-branding-types');
+}
+
+async function checkBrandingBackend(options = {}) {
+  const now = Date.now();
+  if (state.brandingBackendAvailable === true && (now - state.brandingBackendCheckedAt) < 5 * 60 * 1000) {
+    return true;
+  }
+  try {
+    const data = await checkAppsScriptAction('brandingDebug');
+    state.brandingBackendAvailable = true;
+    state.brandingBackendCheckedAt = now;
+    return true;
+  } catch (e) {
+    state.brandingBackendAvailable = false;
+    state.brandingBackendCheckedAt = now;
+    if (!options.silent) {
+      showError('brandingError', 'Offline Branding backend is not accessible. Ask admin to redeploy the Apps Script web app with company access, then retry.');
+    }
+    console.warn('[Branding] backend unavailable:', e);
+    return false;
+  }
 }
 
 // Step 1 → user picked a branding type.
@@ -7513,6 +7602,14 @@ async function submitBranding() {
     }
   }
 
+  const btn = document.getElementById('brandingSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Checking backend…';
+  const backendOk = await checkBrandingBackend();
+  if (!backendOk) {
+    btn.disabled = false; btn.textContent = 'Submit';
+    return;
+  }
+
   // Build payload.
   const submissionId = `BR-${Date.now()}-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
   const payload = {
@@ -7531,7 +7628,6 @@ async function submitBranding() {
   if (needsPlanned) payload.planned = plannedNum;
   if (isAudit)      payload.submission_type = submissionType;
 
-  const btn = document.getElementById('brandingSubmitBtn');
   btn.disabled = true; btn.textContent = 'Submitting…';
   try {
     await postToScript(payload);
@@ -7616,12 +7712,19 @@ async function startPayments() {
   }
 
   navigate('screen-payments-picker');
+  state.paymentsConfigError = false;
+  state.paymentsConfigLoaded = false;
+  state.paymentsBackendAvailable = true;
+  state.paymentsConfigSource = '';
 
   // Always refresh config when entering the screen (cheap call, ensures any
   // toggle change by admin takes effect within one screen-open).
   try {
     await loadPaymentsConfig();
   } catch (e) {
+    state.paymentsConfig = {};
+    state.paymentsConfigLoaded = true;
+    state.paymentsConfigError = true;
     showError('paymentsWindowBanner', 'Could not check submission status. Please retry.');
     document.getElementById('paymentsWindowBanner').style.display = 'block';
   }
@@ -7632,15 +7735,61 @@ async function startPayments() {
 async function loadPaymentsConfig() {
   // Apps Script doGet returns JSON with Access-Control-Allow-Origin: *
   // when deployed as "Anyone, even anonymous", so a plain fetch works.
-  const url = CONFIG.APPS_SCRIPT_URL + '?action=getPaymentsConfig';
-  const res = await fetch(url, { method: 'GET' });
-  if (!res.ok) throw new Error('CONFIG_HTTP_' + res.status);
-  const data = await res.json();
-  if (!data || !data.ok) throw new Error('CONFIG_NOT_OK');
+  let data;
+  try {
+    const url = CONFIG.APPS_SCRIPT_URL + '?action=getPaymentsConfig';
+    const res = await fetch(url, { method: 'GET' });
+    if (!res.ok) throw new Error('CONFIG_HTTP_' + res.status);
+    data = await res.json();
+    if (!data || !data.ok) throw new Error('CONFIG_NOT_OK');
+    state.paymentsBackendAvailable = true;
+    state.paymentsConfigSource = 'apps-script';
+  } catch (err) {
+    console.warn('[Payments] Apps Script config unavailable, falling back to Payments_Config CSV:', err);
+    data = await loadPaymentsConfigFromSheet();
+    state.paymentsBackendAvailable = false;
+    state.paymentsConfigSource = 'sheet-fallback';
+  }
   state.paymentsConfig = data.sub_features || {};
   state.paymentsConfigServerNow = data.server_time_iso || '';
   state.paymentsConfigLoaded = true;
+  state.paymentsConfigError = false;
   return data;
+}
+
+async function loadPaymentsConfigFromSheet() {
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.PAYMENTS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Payments_Config`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('PAYMENTS_CONFIG_SHEET_HTTP_' + res.status);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('PAYMENTS_CONFIG_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
+  const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().trim() === 'sub_feature_code'));
+  if (headerIdx === -1) throw new Error('PAYMENTS_CONFIG_HEADER_NOT_FOUND');
+  const h = rows[headerIdx].map(c => String(c).toLowerCase().trim());
+  const cCode   = h.findIndex(c => c === 'sub_feature_code');
+  const cName   = h.findIndex(c => c === 'sub_feature_name');
+  const cActive = h.findIndex(c => c === 'is_active');
+  const cStart  = h.findIndex(c => c === 'window_start');
+  const cEnd    = h.findIndex(c => c === 'window_end');
+  const out = {};
+  for (const r of rows.slice(headerIdx + 1)) {
+    const code = String(r[cCode] || '').trim().toUpperCase();
+    if (!code) continue;
+    out[code] = {
+      label: String(r[cName] || '').trim(),
+      is_active: toBoolean(r[cActive]),
+      window_start: String(r[cStart] || '').trim(),
+      window_end: String(r[cEnd] || '').trim()
+    };
+  }
+  return {
+    ok: true,
+    server_time_iso: '',
+    sub_features: out
+  };
 }
 
 // Render the picker tiles for sub-features the user has access to.
@@ -7653,7 +7802,13 @@ function renderPaymentsPicker() {
   // Global banner if window is closed for ALL accessible sub-features.
   const banner = document.getElementById('paymentsWindowBanner');
   const allClosed = access.length > 0 && access.every(code => !_isSubFeatureSubmittable(code, cfg));
-  if (allClosed && state.paymentsConfigLoaded) {
+  if (state.paymentsConfigError) {
+    banner.innerHTML = '<b>Could not check payment submission status.</b><br>Apps Script config is unavailable. Contact admin.';
+    banner.style.display = 'block';
+  } else if (state.paymentsConfigSource === 'sheet-fallback') {
+    banner.innerHTML = '<b>Payment status loaded from sheet.</b><br>Apps Script backend is blocked, so submissions are disabled until admin redeploys it.';
+    banner.style.display = 'block';
+  } else if (allClosed && state.paymentsConfigLoaded) {
     const sample = cfg[access[0]];
     const wStart = sample && sample.window_start ? sample.window_start : '20:00';
     const wEnd   = sample && sample.window_end   ? sample.window_end   : '14:45';
@@ -7666,7 +7821,7 @@ function renderPaymentsPicker() {
   grid.innerHTML = access.map(code => {
     const m = PAYMENTS_META[code];
     if (!m) return '';
-    const submittable = _isSubFeatureSubmittable(code, cfg);
+    const submittable = !state.paymentsConfigError && _isSubFeatureSubmittable(code, cfg);
     const sub = submittable ? m.sub : _closedReason(code, cfg);
     const dim = submittable ? '' : 'opacity:0.55;';
     const clickHandler = submittable
@@ -7674,7 +7829,7 @@ function renderPaymentsPicker() {
       : `onclick="_invToast('${_closedReason(code, cfg).replace(/'/g, "\\'")}','error')"`;
     return `
       <div class="option-card" ${clickHandler} style="${dim}">
-        <div class="option-card-icon">${m.icon}</div>
+        <div class="option-card-icon"><i class="ti ${m.icon}"></i></div>
         <div class="option-card-body">
           <div class="option-card-title">${m.title}</div>
           <div class="option-card-sub">${sub}</div>
@@ -7694,6 +7849,7 @@ function _isSubFeatureSubmittable(code, cfg) {
 }
 
 function _closedReason(code, cfg) {
+  if (state.paymentsConfigError) return 'Status unavailable — contact admin.';
   if (!state.paymentsConfigLoaded) return 'Checking status…';
   const sf = cfg[code];
   if (!sf) return 'Not configured yet — contact admin.';
@@ -8160,6 +8316,11 @@ async function submitPayment() {
   const code = state.paymentsSubFeature;
   if (!PAYMENTS_SUB_CODES.includes(code)) {
     showError('paymentsError', 'Please pick a payment type first.'); return;
+  }
+
+  if (state.paymentsBackendAvailable === false) {
+    showError('paymentsError', 'Payments backend is not accessible. Ask admin to redeploy the Apps Script web app, then retry.');
+    return;
   }
 
   // Last-chance window check (UX only; backend re-validates).
