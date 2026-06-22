@@ -7,8 +7,52 @@
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.7
+  VERSION     : 6.9
   LAST UPDATED: June 2026
+
+  CHANGES IN v6.9 (stability pass — no behaviour change to working flows):
+    1. FIX (critical, refresh bug): inventory access + scope
+       (inventoryUpdateAccess, inventoryDashboardAccess, inventoryRole,
+       assignedCity, assignedCities) are now persisted in saveSession and
+       restored on auto-login. Previously they were computed only at interactive
+       login, so a page refresh silently hid every Inventory home card (and broke
+       city scope) for TL/Manager/Central users until they logged out and back in.
+    2. FIX: state.username is now restored on auto-login too (it was persisted but
+       not restored), so onboarding write-back and leaderboard name-matching keep
+       working after a refresh.
+    3. ROBUSTNESS: brandingPlannedAccess is now derived from the header-matched
+       inventoryRole instead of a hardcoded positional index (match[17]) — it no
+       longer silently breaks if Login Credentials columns are reordered.
+    4. ROBUSTNESS: Payments City/MM/NM/Society <option> values are HTML-escaped, so
+       names containing & < > " (e.g. "L&T Realty") render correctly instead of
+       breaking the dropdown. (Scoped to the Payments cascade.)
+    5. FIX: corrected the Offline Branding "backend not accessible" message — it now
+       tells admins to deploy with access "Anyone, even anonymous" (was the
+       incorrect "company access", which is what causes the failure).
+    FRONTEND-ONLY — no Apps Script redeploy required.
+
+  CHANGES IN v6.8 (Payments — dropdown fix + SP10U/SP10O field reorder):
+    1. FIX (Payments cascade): the City -> MM -> NM -> Society dropdowns now
+       de-duplicate case-insensitively (so "Adarsh Palm North" and
+       "adarsh palm north" collapse to one entry), drop spreadsheet junk
+       (#N/A, #REF!, blanks, stray "Select ..." rows), and hide the
+       placeholder option from the open list. Cascade row-matching is now
+       case-insensitive so the de-dupe cannot break MM -> NM -> Society.
+    2. ROBUSTNESS (Payments cascade): master-sheet columns are now read by
+       HEADER NAME (society_name | nm_name | mm_name) with a positional
+       fallback, and the per-city tab is resolved across a few name casings
+       (lowercase first). Helps cities whose tab is "Mumbai"/"Thane" rather
+       than lowercase, or whose columns are reordered.
+       NOTE: if a city's tab genuinely holds wrong/empty MM data (numbers in
+       the mm column, or an empty/missing tab) that is a SHEET data issue this
+       code cannot invent values for.
+    3. CHANGE (SP10U + SP10O form order, shared field block): sequence is now
+       City, MM, NM, Society, Beneficiary Name, Beneficiary Designation,
+       Detail of Activity, Type of Activity, D2D, Permission Cost, GST Amount,
+       Total Permission Cost, GST Number, Date of Activity, Flat Count,
+       Payment Type, Account Number, IFSC, SPOC Name, SPOC Number, Cheque, PAN.
+       Labels, optional/required flags, validation and payload are UNCHANGED.
+    FRONTEND-ONLY — no Apps Script redeploy required.
 
   CHANGES IN v6.7 (TL Incentive Tracker — new feature):
     1. NEW FEATURE: "TL Tracker" (Performance group on home). Gated by a new
@@ -2622,17 +2666,8 @@
       <label>Society Name (please type)</label>
       <input type="text" id="paySocietyOther" maxlength="120" placeholder="Type society name (or 'Market Activity — …')" />
     </div>
-
-    <div class="input-wrap"><label>Permission Cost (₹)</label><input type="number" id="payPermCost" min="0" step="0.01" /></div>
-    <div class="input-wrap"><label>GST Amount (₹)</label><input type="number" id="payGstAmt" min="0" step="0.01" value="0" /></div>
-    <div class="input-wrap"><label>Total Permission Cost (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payTotalPermCost" readonly style="background:#f5f5f5" /></div>
-    <div class="input-wrap"><label>GST Number <small style="color:var(--muted);font-weight:600">optional</small></label><input type="text" id="payGstNum" maxlength="20" placeholder="e.g. 29ABCDE1234F1Z5" /></div>
-
-    <div class="input-wrap"><label>Flat Count <small style="color:var(--muted);font-weight:600">enter 0 for Market Activity</small></label><input type="number" id="payFlatCount" min="0" step="1" /></div>
-
     <div class="input-wrap"><label>Beneficiary Name</label><input type="text" id="payBenefName" maxlength="120" /></div>
     <div class="input-wrap"><label>Beneficiary Designation</label><input type="text" id="payBenefDesig" maxlength="80" /></div>
-    <div class="input-wrap"><label>Date of Activity</label><input type="date" id="payActivityDate" /></div>
     <div class="input-wrap"><label>Detail of Activity</label><textarea id="payActivityDetail" maxlength="500"></textarea></div>
     <div class="input-wrap"><label>Type of Activity</label>
       <select id="payActivityType">
@@ -2649,6 +2684,14 @@
         <option value="No">No</option>
       </select>
     </div>
+
+    <div class="input-wrap"><label>Permission Cost (₹)</label><input type="number" id="payPermCost" min="0" step="0.01" /></div>
+    <div class="input-wrap"><label>GST Amount (₹)</label><input type="number" id="payGstAmt" min="0" step="0.01" value="0" /></div>
+    <div class="input-wrap"><label>Total Permission Cost (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payTotalPermCost" readonly style="background:#f5f5f5" /></div>
+    <div class="input-wrap"><label>GST Number <small style="color:var(--muted);font-weight:600">optional</small></label><input type="text" id="payGstNum" maxlength="20" placeholder="e.g. 29ABCDE1234F1Z5" /></div>
+    <div class="input-wrap"><label>Date of Activity</label><input type="date" id="payActivityDate" /></div>
+    <div class="input-wrap"><label>Flat Count <small style="color:var(--muted);font-weight:600">enter 0 for Market Activity</small></label><input type="number" id="payFlatCount" min="0" step="1" /></div>
+
     <div class="input-wrap"><label>Payment Type</label>
       <select id="payPaymentType">
         <option value="">Select…</option>
@@ -2660,7 +2703,6 @@
     <div class="input-wrap"><label>IFSC Code</label><input type="text" id="payIfsc" maxlength="11" placeholder="e.g. HDFC0001234" /></div>
     <div class="input-wrap"><label>Society SPOC Name</label><input type="text" id="paySpocName" maxlength="80" /></div>
     <div class="input-wrap"><label>Society SPOC Number</label><input type="text" id="paySpocNum" inputmode="tel" maxlength="20" /></div>
-
     <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:#c00;font-weight:600">required</small></label>
       <input type="file" id="payChequeFile" accept="image/*,application/pdf" onchange="onPaymentsFile('cancelled_cheque', this)" />
       <div id="payChequeStatus" class="pay-file-status"></div>
@@ -2958,7 +3000,18 @@ let state = {
 // ─────────────────────────────────────────────────────────
 function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess, tlTrackerAccess) {
   const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
-  localStorage.setItem('snabbit_session', JSON.stringify({ username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess, tlTrackerAccess, expiry }));
+  localStorage.setItem('snabbit_session', JSON.stringify({
+    username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess,
+    brandingAccess, paymentsAccess, brandingPlannedAccess, tlTrackerAccess,
+    // v6.9 - persist inventory access + scope so the inventory home cards (and city
+    // scope) survive a page refresh. Read from state, set at the single call site below.
+    inventoryUpdateAccess:    state.inventoryUpdateAccess,
+    inventoryDashboardAccess: state.inventoryDashboardAccess,
+    inventoryRole:            state.inventoryRole,
+    assignedCity:             state.assignedCity,
+    assignedCities:           state.assignedCities,
+    expiry
+  }));
 }
 function loadSession() {
   try {
@@ -3166,9 +3219,10 @@ async function doLogin() {
     state.assignedCities           = _parseAssignedCities(state.assignedCity, state.inventoryRole);
     // v5.8 — Offline Branding access
     state.brandingAccess           = brandingIdx >= 0 ? toBoolean(match[brandingIdx]) : false;
-    // v6.4 — Planned-box gate. Column R (18th column, 0-based index 17): show the
-    // Planned field in ALL branding forms only when it reads exactly "central".
-    state.brandingPlannedAccess    = String(match[17] || '').trim().toLowerCase() === 'central';
+    // v6.4 — Planned-box gate: show the Planned field in ALL branding forms only when
+    // the inventory role reads exactly "central".
+    // v6.9 — derive from the header-matched inventoryRole (was a fragile positional match[17]).
+    state.brandingPlannedAccess    = (state.inventoryRole === 'central');
     // v5.9 — Payments access (parse comma-separated codes from column T)
     state.paymentsAccess           = paymentsIdx >= 0 ? parsePaymentsAccess(match[paymentsIdx]) : [];
     // v6.7 — TL Tracker access (dedicated boolean column)
@@ -5393,6 +5447,13 @@ window.addEventListener('load', () => {
     state.brandingPlannedAccess = session.brandingPlannedAccess || false;  // v6.4
     state.paymentsAccess    = Array.isArray(session.paymentsAccess) ? session.paymentsAccess : [];
     state.tlTrackerAccess   = session.tlTrackerAccess   || false;  // v6.7
+    // v6.9 - restore inventory access + scope (fixes vanished inventory home cards on refresh)
+    state.inventoryUpdateAccess    = session.inventoryUpdateAccess    || false;
+    state.inventoryDashboardAccess = session.inventoryDashboardAccess || false;
+    state.inventoryRole            = session.inventoryRole            || '';
+    state.assignedCity             = session.assignedCity             || '';
+    state.assignedCities           = Array.isArray(session.assignedCities) ? session.assignedCities : [];
+    state.username                 = session.username || '';  // v6.9 - onboarding/leaderboard matching
     onLoggedIn();
   }
 });
@@ -7334,7 +7395,7 @@ async function checkBrandingBackend(options = {}) {
     state.brandingBackendAvailable = false;
     state.brandingBackendCheckedAt = now;
     if (!options.silent) {
-      showError('brandingError', 'Offline Branding backend is not accessible. Ask admin to redeploy the Apps Script web app with company access, then retry.');
+      showError('brandingError', 'Offline Branding backend is not accessible. Ask admin to redeploy the Apps Script web app with access set to "Anyone, even anonymous", then retry.');
     }
     console.warn('[Branding] backend unavailable:', e);
     return false;
@@ -7981,6 +8042,106 @@ function _populateMonthSelect(selectId) {
 // city when the user picks it (avoids loading 10 tabs upfront).
 
 // Get the list of city tab names from the master sheet. Cached on state.
+// -------------------------------------------------------------
+// v6.8 - Payments cascade hardening (dropdown data hygiene).
+// Shared helpers for the City -> MM -> NM -> Society dropdowns.
+// -------------------------------------------------------------
+
+// Normalise a value for case-insensitive matching (trim, collapse spaces, lowercase).
+function _normKey(s) {
+  return String(s == null ? '' : s).trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+// v6.9 - escape values placed inside <option> markup so names containing & < > "
+// (e.g. "L&T Realty") render correctly instead of breaking the dropdown.
+function _escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Placeholder <option> that cannot be re-selected and is hidden from the open list.
+function _phOption(label) {
+  return '<option value="" selected disabled hidden>' + label + '</option>';
+}
+
+// Clean + de-duplicate dropdown values:
+//   - trims, collapses internal whitespace
+//   - drops blanks, spreadsheet errors (#N/A, #REF!...), "n/a", stray "Select ..." rows
+//   - de-dupes case-insensitively, keeping the best-cased variant (most capitals win)
+//   - returns case-insensitively sorted
+function _cleanDistinct(values) {
+  var isJunk = function (s) {
+    if (!s) return true;
+    var low = s.toLowerCase();
+    if (low.charAt(0) === '#') return true;                       // #N/A, #REF!, #ERROR!, ...
+    if (['n/a', 'na', '-', '\u2013', '\u2014', 'null', 'undefined'].indexOf(low) !== -1) return true;
+    if (low.indexOf('select ') === 0) return true;                // stray "Select MM..." rows
+    return false;
+  };
+  var ups = function (str) { return (str.match(/[A-Z]/g) || []).length; };
+  var byKey = {};
+  for (var i = 0; i < values.length; i++) {
+    var s = String(values[i] == null ? '' : values[i]).trim().replace(/\s+/g, ' ');
+    if (isJunk(s)) continue;
+    var key = s.toLowerCase();
+    var prev = byKey[key];
+    if (!prev) { byKey[key] = s; continue; }
+    if (ups(s) > ups(prev) || (ups(s) === ups(prev) && s.localeCompare(prev) < 0)) byKey[key] = s;
+  }
+  var out = [];
+  for (var k in byKey) if (byKey.hasOwnProperty(k)) out.push(byKey[k]);
+  return out.sort(function (a, b) { return a.toLowerCase().localeCompare(b.toLowerCase()); });
+}
+
+// Candidate master-sheet tab-name casings - lowercase FIRST so cities whose tabs
+// are already lowercase resolve in a single fetch (no behaviour change for them).
+function _cityTabCandidates(cityLower) {
+  var lc = String(cityLower || '').trim();
+  var cands = [lc, titleCaseCity(lc), (lc.charAt(0).toUpperCase() + lc.slice(1)), lc.toUpperCase()];
+  var out = [];
+  for (var i = 0; i < cands.length; i++) if (cands[i] && out.indexOf(cands[i]) === -1) out.push(cands[i]);
+  return out;
+}
+
+// Extract society/nm/mm rows from a parsed CSV: match columns by header name,
+// falling back to positional society|nm|mm when no header is recognised.
+function _extractMasterRows(parsed) {
+  var data = [];
+  if (!parsed || !parsed.length) return data;
+  var header = parsed[0].map(function (c) { return String(c || '').toLowerCase().replace(/\s+/g, '_').trim(); });
+  var findCol = function (names) {
+    for (var n = 0; n < names.length; n++) {
+      var idx = header.indexOf(names[n]);
+      if (idx !== -1) return idx;
+      idx = header.findIndex(function (h) { return h.indexOf(names[n]) !== -1; });
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  };
+  var iSoc = findCol(['society_name', 'society']);
+  var iNm  = findCol(['nm_name', 'nm']);
+  var iMm  = findCol(['mm_name', 'mm']);
+  var start;
+  if (iSoc !== -1 || iNm !== -1 || iMm !== -1) {     // header recognised
+    if (iSoc === -1) iSoc = 0;
+    if (iNm  === -1) iNm  = 1;
+    if (iMm  === -1) iMm  = 2;
+    start = 1;
+  } else {                                           // no header -> positional, from the top
+    iSoc = 0; iNm = 1; iMm = 2; start = 0;
+  }
+  for (var i = start; i < parsed.length; i++) {
+    var r = parsed[i];
+    if (!r) continue;
+    var soc = String(r[iSoc] || '').trim();
+    var nm  = String(r[iNm]  || '').trim();
+    var mm  = String(r[iMm]  || '').trim();
+    if (!soc && !nm && !mm) continue;
+    data.push({ society_name: soc, nm_name: nm, mm_name: mm });
+  }
+  return data;
+}
+
 async function _loadSocietyMasterCities() {
   if (state._societyMasterCitiesLoaded) return state._societyMasterCities || [];
   // gviz returns sheet metadata; we use the "list all sheets" approach via the
@@ -8000,43 +8161,30 @@ async function _loadSocietyMasterCities() {
 // Lowercase city → loaded? Lazy-loaded data lives on state.societyMaster[cityLower].
 async function _loadSocietiesForCity(cityLower) {
   if (state.societyMasterLoaded[cityLower]) return state.societyMaster[cityLower] || [];
-  // The tab name in the master sheet matches the city EXACTLY as listed in
-  // PAYMENTS_CITY_LIST (lowercase, with spaces like "navi mumbai").
-  const tabName = cityLower;
-  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SOCIETY_MASTER_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
-  try {
-    const res = await fetch(url);
-    const txt = await res.text();
-    if (txt.trim().startsWith('<!DOCTYPE') || txt.trim().startsWith('<html')) {
-      throw new Error('SHEET_ACCESS_DENIED');
-    }
-    const rows = parseCSV(txt);
-    // First row = headers: society_name | nm_name | mm_name
-    const data = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r) continue;
-      const society = String(r[0] || '').trim();
-      const nm      = String(r[1] || '').trim();
-      const mm      = String(r[2] || '').trim();
-      if (!mm && !nm) continue;  // skip totally empty rows
-      data.push({ society_name: society, nm_name: nm, mm_name: mm });
-    }
-    state.societyMaster[cityLower] = data;
-    state.societyMasterLoaded[cityLower] = true;
-    return data;
-  } catch (e) {
-    state.societyMaster[cityLower] = [];
-    state.societyMasterLoaded[cityLower] = true;
-    return [];
+  // v6.8 - try a few tab-name casings (lowercase first); accept the first that
+  // returns rows. Columns are header-matched with a positional fallback.
+  const candidates = _cityTabCandidates(cityLower);
+  let data = [];
+  for (let ci = 0; ci < candidates.length; ci++) {
+    const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SOCIETY_MASTER_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(candidates[ci])}`;
+    try {
+      const res = await fetch(url);
+      const txt = await res.text();
+      if (txt.trim().startsWith('<!DOCTYPE') || txt.trim().startsWith('<html')) continue;
+      const extracted = _extractMasterRows(parseCSV(txt));
+      if (extracted.length) { data = extracted; break; }
+    } catch (e) { /* try next casing */ }
   }
+  state.societyMaster[cityLower] = data;
+  state.societyMasterLoaded[cityLower] = true;
+  return data;
 }
 
 async function _populateSocietyDropdowns() {
   // Cities first (from static list — kept in sync with the master sheet tabs).
   const cities = await _loadSocietyMasterCities();
   const sel = document.getElementById('payCitySelect');
-  sel.innerHTML = '<option value="">Select city…</option>' +
+  sel.innerHTML = _phOption('Select city…') +
     cities.map(c => `<option value="${c}">${titleCaseCity(c)}</option>`).join('');
   sel.onchange = onPaymentsCityChange;
 
@@ -8044,9 +8192,9 @@ async function _populateSocietyDropdowns() {
   const mm = document.getElementById('payMmSelect');
   const nm = document.getElementById('payNmSelect');
   const so = document.getElementById('paySocietySelect');
-  mm.innerHTML = '<option value="">Select MM…</option>'; mm.disabled = true;
-  nm.innerHTML = '<option value="">Select NM…</option>'; nm.disabled = true;
-  so.innerHTML = '<option value="">Select society…</option>'; so.disabled = true;
+  mm.innerHTML = _phOption('Select MM…'); mm.disabled = true;
+  nm.innerHTML = _phOption('Select NM…'); nm.disabled = true;
+  so.innerHTML = _phOption('Select society…'); so.disabled = true;
   mm.onchange = onPaymentsMmChange;
   nm.onchange = onPaymentsNmChange;
   so.onchange = onPaymentsSocietyChange;
@@ -8055,7 +8203,7 @@ async function _populateSocietyDropdowns() {
 function _populateCitySelectFromMaster(selectId) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
-  sel.innerHTML = '<option value="">Select city…</option>' +
+  sel.innerHTML = _phOption('Select city…') +
     PAYMENTS_CITY_LIST.map(c => `<option value="${c}">${titleCaseCity(c)}</option>`).join('');
 }
 
@@ -8064,20 +8212,18 @@ async function onPaymentsCityChange() {
   const mm = document.getElementById('payMmSelect');
   const nm = document.getElementById('payNmSelect');
   const so = document.getElementById('paySocietySelect');
-  mm.innerHTML = '<option value="">Select MM…</option>';
-  nm.innerHTML = '<option value="">Select NM…</option>';
-  so.innerHTML = '<option value="">Select society…</option>';
+  mm.innerHTML = _phOption('Select MM…');
+  nm.innerHTML = _phOption('Select NM…');
+  so.innerHTML = _phOption('Select society…');
   mm.disabled = true; nm.disabled = true; so.disabled = true;
   document.getElementById('paySocietyOtherWrap').style.display = 'none';
   if (!city) return;
 
   const rows = await _loadSocietiesForCity(city);
-  // DISTINCT MMs in this city
-  const mmSet = new Set();
-  for (const r of rows) if (r.mm_name) mmSet.add(r.mm_name);
-  const mms = Array.from(mmSet).sort((a,b) => a.localeCompare(b));
-  mm.innerHTML = '<option value="">Select MM…</option>' +
-    mms.map(m => `<option value="${m}">${m}</option>`).join('');
+  // v6.8 - distinct, de-duplicated (case-insensitive), junk-filtered MM list.
+  const mms = _cleanDistinct(rows.map(r => r.mm_name));
+  mm.innerHTML = _phOption('Select MM…') +
+    mms.map(m => `<option value="${_escHtml(m)}">${_escHtml(m)}</option>`).join('');
   mm.disabled = mms.length === 0;
 }
 
@@ -8086,20 +8232,19 @@ function onPaymentsMmChange() {
   const selectedMm = document.getElementById('payMmSelect').value.trim();
   const nm = document.getElementById('payNmSelect');
   const so = document.getElementById('paySocietySelect');
-  nm.innerHTML = '<option value="">Select NM…</option>';
-  so.innerHTML = '<option value="">Select society…</option>';
+  nm.innerHTML = _phOption('Select NM…');
+  so.innerHTML = _phOption('Select society…');
   nm.disabled = true; so.disabled = true;
   document.getElementById('paySocietyOtherWrap').style.display = 'none';
   if (!selectedMm) return;
 
+  // v6.8 - match rows case-insensitively (display labels may be re-cased by dedupe).
   const rows = state.societyMaster[city] || [];
-  const nmSet = new Set();
-  for (const r of rows) {
-    if (r.mm_name === selectedMm && r.nm_name) nmSet.add(r.nm_name);
-  }
-  const nms = Array.from(nmSet).sort((a,b) => a.localeCompare(b));
-  nm.innerHTML = '<option value="">Select NM…</option>' +
-    nms.map(n => `<option value="${n}">${n}</option>`).join('');
+  const nmVals = [];
+  for (const r of rows) if (_normKey(r.mm_name) === _normKey(selectedMm) && r.nm_name) nmVals.push(r.nm_name);
+  const nms = _cleanDistinct(nmVals);
+  nm.innerHTML = _phOption('Select NM…') +
+    nms.map(n => `<option value="${_escHtml(n)}">${_escHtml(n)}</option>`).join('');
   nm.disabled = nms.length === 0;
 }
 
@@ -8108,22 +8253,23 @@ function onPaymentsNmChange() {
   const selectedMm = document.getElementById('payMmSelect').value.trim();
   const selectedNm = document.getElementById('payNmSelect').value.trim();
   const so = document.getElementById('paySocietySelect');
-  so.innerHTML = '<option value="">Select society…</option>';
+  so.innerHTML = _phOption('Select society…');
   so.disabled = true;
   document.getElementById('paySocietyOtherWrap').style.display = 'none';
   if (!selectedNm) return;
 
+  // v6.8 - case-insensitive MM+NM match, de-duplicated society list.
   const rows = state.societyMaster[city] || [];
-  const socSet = new Set();
+  const socVals = [];
   for (const r of rows) {
-    if (r.mm_name === selectedMm && r.nm_name === selectedNm && r.society_name) {
-      socSet.add(r.society_name);
+    if (_normKey(r.mm_name) === _normKey(selectedMm) && _normKey(r.nm_name) === _normKey(selectedNm) && r.society_name) {
+      socVals.push(r.society_name);
     }
   }
-  const socs = Array.from(socSet).sort((a,b) => a.localeCompare(b));
-  // Always include "Others" at the bottom — even when there are real societies.
-  const opts = ['<option value="">Select society…</option>']
-    .concat(socs.map(s => `<option value="${s}">${s}</option>`))
+  const socs = _cleanDistinct(socVals);
+  // Always include "Others" at the bottom - even when there are real societies.
+  const opts = [_phOption('Select society…')]
+    .concat(socs.map(s => `<option value="${_escHtml(s)}">${_escHtml(s)}</option>`))
     .concat(['<option value="__OTHER__">Others (type below)</option>']);
   so.innerHTML = opts.join('');
   so.disabled = false;
