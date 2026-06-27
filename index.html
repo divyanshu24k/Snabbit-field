@@ -2495,6 +2495,13 @@
         <div class="option-card-sub">Execution or audit data.</div>
       </div>
     </div>
+    <div class="option-card" onclick="openBrandingType('Umberella')">
+      <div class="option-card-icon"><i class="ti ti-umbrella"></i></div>
+      <div class="option-card-body">
+        <div class="option-card-title">Umberella</div>
+        <div class="option-card-sub">Execution, audit or replacement with society, GPS and media proof.</div>
+      </div>
+    </div>
     <div class="option-card" onclick="openBrandingType('Digital_Screen')">
       <div class="option-card-icon"><i class="ti ti-device-tv"></i></div>
       <div class="option-card-body">
@@ -2585,12 +2592,26 @@
 
   <div class="input-wrap">
     <label>NM Name</label>
-    <select id="brandingNmSelect" disabled>
+    <select id="brandingNmSelect" onchange="onBrandingNmChange()" disabled>
       <option value="">Select NM…</option>
     </select>
   </div>
 
-  <!-- Planned row (hidden for Audit submissions) -->
+  <!-- Umberella-only: Society dropdown with manual fallback -->
+  <div id="brandingSocietyWrap" style="display:none">
+    <div class="input-wrap">
+      <label>Society Name</label>
+      <select id="brandingSocietySelect" onchange="onBrandingSocietyChange()" disabled>
+        <option value="">Select society…</option>
+      </select>
+    </div>
+    <div class="input-wrap" id="brandingSocietyOtherWrap" style="display:none">
+      <label>Type Society Name</label>
+      <input type="text" id="brandingSocietyOther" placeholder="Enter society name manually" />
+    </div>
+  </div>
+
+  <!-- Planned row (hidden for Audit submissions and Umberella) -->
   <div class="input-wrap" id="brandingPlannedWrap">
     <label id="brandingPlannedLabel">Planned</label>
     <input type="number" id="brandingPlanned" min="0" step="1" value="0" />
@@ -2608,7 +2629,31 @@
     <input type="date" id="brandingDate" />
   </div>
 
-  <div class="input-wrap">
+  <!-- Umberella-only manager + proof fields -->
+  <div class="input-wrap" id="brandingManagerNameWrap" style="display:none">
+    <label>Society Manager Name <span style="color:var(--muted-light);font-weight:400">(optional)</span></label>
+    <input type="text" id="brandingManagerName" placeholder="Enter manager name" />
+  </div>
+
+  <div class="input-wrap" id="brandingManagerNumberWrap" style="display:none">
+    <label>Society Manager Number <span style="color:var(--muted-light);font-weight:400">(optional)</span></label>
+    <input type="tel" id="brandingManagerNumber" inputmode="tel" placeholder="Enter manager number" />
+  </div>
+
+  <div class="input-wrap" id="brandingLatLongWrap" style="display:none">
+    <label>Lat Long</label>
+    <input type="text" id="brandingLatLong" placeholder="Capture current location" readonly />
+    <button type="button" class="btn btn-secondary" id="brandingGpsBtn" onclick="captureBrandingLatLong()"><i class="ti ti-current-location"></i> Capture Lat Long</button>
+    <div class="field-lock-note" id="brandingGpsStatus">Required — capture at the society location.</div>
+  </div>
+
+  <div class="input-wrap" id="brandingMediaWrap" style="display:none">
+    <label>Image / Video Upload</label>
+    <input type="file" id="brandingMediaFile" accept="image/*,video/*" onchange="onBrandingMediaFile(this)" />
+    <div class="pay-file-status" id="brandingMediaStatus"></div>
+  </div>
+
+  <div class="input-wrap" id="brandingNotesWrap">
     <label>Notes (optional)</label>
     <textarea id="brandingNotes" maxlength="500" placeholder="Any additional info — location landmark, special instructions, etc."></textarea>
   </div>
@@ -2970,7 +3015,10 @@ let state = {
   brandingAccess:           false,
   brandingPlannedAccess:    false,  // v6.4 — column R == 'central' → show Planned box in all branding forms
   brandingType:             '',     // currently selected branding type (e.g. 'Pole_Banner')
-  brandingSubmissionType:   '',     // 'Execution' or 'Audit' (only for audit-pattern types)
+  brandingSubmissionType:   '',     // 'Execution', 'Audit' or 'Replacement' for audit-pattern types
+  brandingLat:              null,   // Umberella-only GPS latitude
+  brandingLon:              null,   // Umberella-only GPS longitude
+  brandingMedia:            null,   // Umberella-only proof file {base64, mime, filename, size}
   brandingBackendAvailable: null,
   brandingBackendCheckedAt: 0,
   cityMmNmData:             [],     // [{city, mm, nm}] from Transfer_Tab — shared with branding cascading dropdowns
@@ -3269,7 +3317,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, targetsAll:[], incView:'weekday', lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{}, tlTrackerAccess:false, tlData:[], tlWeeks:[], tlMonth:null, tlPeriod:'', tlMe:null };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, targetsAll:[], incView:'weekday', lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', brandingLat:null, brandingLon:null, brandingMedia:null, cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{}, tlTrackerAccess:false, tlData:[], tlWeeks:[], tlMonth:null, tlPeriod:'', tlMe:null };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -7361,6 +7409,7 @@ const BRANDING_TYPES = {
   Sunboard:         { title: 'Sunboards / Sunpacks',pattern: 'audit'  },
   Society_Branding: { title: 'Society Branding',    pattern: 'audit'  },
   Gazebo_Umbrella:  { title: 'Gazebo / Umbrella',   pattern: 'audit'  },
+  Umberella:        { title: 'Umberella',           pattern: 'umberella' },
   Digital_Screen:   { title: 'Digital Screen',      pattern: 'single' },
   OOH:              { title: 'OOH',                 pattern: 'single' },
   QC:               { title: 'QC',                  pattern: 'single' },
@@ -7371,7 +7420,11 @@ const BRANDING_TYPES = {
 const BRANDING_REPLACEMENT_TYPES = {
   Pole_Banner:      true,
   Society_Branding: true,
+  Umberella:        true,
 };
+
+// Umberella proof uploads are sent as base64 to Apps Script and uploaded to Drive.
+const BRANDING_MEDIA_MAX_FILE_BYTES = 20 * 1024 * 1024;  // 20 MB after image compression
 
 // Entry point — wired to the home tile.
 function startBranding() {
@@ -7383,11 +7436,26 @@ function startBranding() {
 
 async function checkBrandingBackend(options = {}) {
   const now = Date.now();
-  if (state.brandingBackendAvailable === true && (now - state.brandingBackendCheckedAt) < 5 * 60 * 1000) {
+  if (state.brandingType !== 'Umberella' && state.brandingBackendAvailable === true && (now - state.brandingBackendCheckedAt) < 5 * 60 * 1000) {
     return true;
   }
   try {
     const data = await checkAppsScriptAction('brandingDebug');
+
+    // For the new Umberella flow, ensure the deployed Apps Script actually
+    // knows this new custom route. Otherwise no-cors would make a failed write
+    // look successful to the field user.
+    if (state.brandingType === 'Umberella') {
+      const tabs = []
+        .concat(data.audit_tabs || [])
+        .concat(data.single_tabs || [])
+        .concat(data.replacement_tabs || [])
+        .concat(data.umberella_tabs || []);
+      if (tabs.indexOf('Umberella') === -1) {
+        throw new Error('UMBERELLA_BACKEND_NOT_DEPLOYED');
+      }
+    }
+
     state.brandingBackendAvailable = true;
     state.brandingBackendCheckedAt = now;
     return true;
@@ -7395,7 +7463,10 @@ async function checkBrandingBackend(options = {}) {
     state.brandingBackendAvailable = false;
     state.brandingBackendCheckedAt = now;
     if (!options.silent) {
-      showError('brandingError', 'Offline Branding backend is not accessible. Ask admin to redeploy the Apps Script web app with access set to "Anyone, even anonymous", then retry.');
+      const msg = (state.brandingType === 'Umberella')
+        ? 'Umberella backend is not live yet. Ask admin to paste/deploy the updated Apps Script, then retry.'
+        : 'Offline Branding backend is not accessible. Ask admin to redeploy the Apps Script web app with access set to "Anyone, even anonymous", then retry.';
+      showError('brandingError', msg);
     }
     console.warn('[Branding] backend unavailable:', e);
     return false;
@@ -7409,7 +7480,7 @@ function openBrandingType(typeKey) {
   state.brandingSubmissionType = '';
 
   const cfg = BRANDING_TYPES[typeKey];
-  if (cfg.pattern === 'audit') {
+  if (cfg.pattern === 'audit' || cfg.pattern === 'umberella') {
     // Show the Execution vs Audit (vs Replacement) picker.
     document.getElementById('brandingSubTitle').textContent = cfg.title;
     // v6.2 — only show the Replacement card for Pole_Banner & Society_Branding.
@@ -7431,6 +7502,8 @@ function openBrandingForm(submissionType) {
   const cfg = BRANDING_TYPES[typeKey];
   if (!cfg) { navigate('screen-branding-types'); return; }
 
+  const isUmberella = cfg.pattern === 'umberella';
+
   // Reset form fields.
   hideMsg('brandingError');
   hideMsg('brandingSuccess');
@@ -7438,51 +7511,65 @@ function openBrandingForm(submissionType) {
   document.getElementById('brandingExecuted').value = '';
   document.getElementById('brandingDate').value     = '';
   document.getElementById('brandingNotes').value    = '';
+  _resetUmberellaBrandingFields();
 
   // Title & subtitle.
   document.getElementById('brandingFormTitle').textContent = cfg.title;
   let labelSuffix = '';
-  if (cfg.pattern === 'audit') labelSuffix = ' · ' + submissionType;
+  if (cfg.pattern === 'audit' || cfg.pattern === 'umberella') labelSuffix = ' · ' + submissionType;
   document.getElementById('brandingFormLabel').textContent = 'Branding' + labelSuffix;
 
-  // Configure the form layout based on pattern + submission type.
+  // Common controls.
   const plannedWrap = document.getElementById('brandingPlannedWrap');
   const executedLabel = document.getElementById('brandingExecutedLabel');
   const dateLabel = document.getElementById('brandingDateLabel');
+  const notesWrap = document.getElementById('brandingNotesWrap');
 
-  if (cfg.pattern === 'audit' && submissionType === 'Audit') {
-    // Audit: planned is hidden, executed shown as "Live Count", date shown as "Audit Date".
+  // Toggle Umberella-only blocks.
+  _setUmbrellaBlocks(isUmberella);
+
+  if (isUmberella) {
+    plannedWrap.style.display = 'none';
+    executedLabel.textContent = 'Quantity';
+    dateLabel.textContent = submissionType + ' Date';
+    notesWrap.style.display = 'none';
+    document.getElementById('brandingFormSub').textContent = 'Select society, enter quantity, capture GPS and attach image/video proof.';
+  } else if (cfg.pattern === 'audit' && submissionType === 'Audit') {
     plannedWrap.style.display = 'none';
     executedLabel.textContent = 'Live Count as per Audit';
     dateLabel.textContent     = 'Audit Date';
+    notesWrap.style.display   = '';
     document.getElementById('brandingFormSub').textContent = 'Record what was actually live during this audit.';
   } else if (cfg.pattern === 'audit' && submissionType === 'Replacement') {
-    // v6.2 — Replacement: planned hidden, executed shown as "Replacement Count", date shown as "Replacement Date".
     plannedWrap.style.display = 'none';
     executedLabel.textContent = 'Replacement Count';
     dateLabel.textContent     = 'Replacement Date';
+    notesWrap.style.display   = '';
     document.getElementById('brandingFormSub').textContent = 'Record how many were replaced and when.';
   } else if (cfg.pattern === 'audit') {
-    // Execution: planned + executed + execution date.
     plannedWrap.style.display = '';
     executedLabel.textContent = 'Executed';
     dateLabel.textContent     = 'Execution Date';
+    notesWrap.style.display   = '';
     document.getElementById('brandingFormSub').textContent = 'Record how many were planned vs actually executed.';
   } else {
-    // Single-form pattern: planned + executed + Go Live Date.
     plannedWrap.style.display = '';
     executedLabel.textContent = 'Executed';
     dateLabel.textContent     = 'Go Live Date';
+    notesWrap.style.display   = '';
     document.getElementById('brandingFormSub').textContent = 'Record the count and when this went live.';
   }
 
   // v6.4 — Planned box is gated by column R. Only "central" users see it, in
-  // EVERY branding form (single + execution). Hidden for everyone else,
-  // overriding whichever branch above tried to show it.
-  if (!state.brandingPlannedAccess) plannedWrap.style.display = 'none';
+  // EVERY branding form (single + execution). Hidden for everyone else.
+  if (!state.brandingPlannedAccess || isUmberella) plannedWrap.style.display = 'none';
 
-  // Populate cascading dropdowns.
-  populateBrandingCityDropdown();
+  // Populate cascading dropdowns. Umberella uses the Society Master cascade
+  // from Payments (City -> MM -> NM -> Society). Older branding types keep
+  // the Transfer_Tab City -> MM -> NM cascade.
+  if (isUmberella) populateBrandingUmbCityDropdown();
+  else populateBrandingCityDropdown();
+
   navigate('screen-branding-form');
 }
 
@@ -7523,6 +7610,7 @@ async function loadCityMmNmData() {
 
 // Build the City dropdown from cached data.
 function populateBrandingCityDropdown() {
+  if (state.brandingType === 'Umberella') { populateBrandingUmbCityDropdown(); return; }
   const sel = document.getElementById('brandingCitySelect');
   const mmSel = document.getElementById('brandingMmSelect');
   const nmSel = document.getElementById('brandingNmSelect');
@@ -7561,6 +7649,7 @@ function populateBrandingCityDropdown() {
 }
 
 function onBrandingCityChange() {
+  if (state.brandingType === 'Umberella') { onBrandingUmbCityChange(); return; }
   const city = document.getElementById('brandingCitySelect').value;
   const mmSel = document.getElementById('brandingMmSelect');
   const nmSel = document.getElementById('brandingNmSelect');
@@ -7589,6 +7678,7 @@ function onBrandingCityChange() {
 }
 
 function onBrandingMmChange() {
+  if (state.brandingType === 'Umberella') { onBrandingUmbMmChange(); return; }
   const city = document.getElementById('brandingCitySelect').value;
   const mm   = document.getElementById('brandingMmSelect').value;
   const nmSel = document.getElementById('brandingNmSelect');
@@ -7614,6 +7704,179 @@ function onBrandingMmChange() {
   nmSel.disabled = false;
 }
 
+function onBrandingNmChange() {
+  if (state.brandingType === 'Umberella') { onBrandingUmbNmChange(); return; }
+}
+
+function _resetUmberellaBrandingFields() {
+  state.brandingLat = null;
+  state.brandingLon = null;
+  state.brandingMedia = null;
+  const ids = ['brandingSocietySelect','brandingSocietyOther','brandingManagerName','brandingManagerNumber','brandingLatLong','brandingMediaFile'];
+  ids.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const otherWrap = document.getElementById('brandingSocietyOtherWrap');
+  if (otherWrap) otherWrap.style.display = 'none';
+  const mediaStatus = document.getElementById('brandingMediaStatus');
+  if (mediaStatus) { mediaStatus.textContent = ''; mediaStatus.className = 'pay-file-status'; }
+  const gpsStatus = document.getElementById('brandingGpsStatus');
+  if (gpsStatus) gpsStatus.textContent = 'Required — capture at the society location.';
+  const gpsBtn = document.getElementById('brandingGpsBtn');
+  if (gpsBtn) { gpsBtn.disabled = false; gpsBtn.innerHTML = '<i class="ti ti-current-location"></i> Capture Lat Long'; }
+}
+
+function _setUmbrellaBlocks(show) {
+  ['brandingSocietyWrap','brandingManagerNameWrap','brandingManagerNumberWrap','brandingLatLongWrap','brandingMediaWrap']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = show ? '' : 'none'; });
+}
+
+function populateBrandingUmbCityDropdown() {
+  const sel = document.getElementById('brandingCitySelect');
+  const mmSel = document.getElementById('brandingMmSelect');
+  const nmSel = document.getElementById('brandingNmSelect');
+  const soSel = document.getElementById('brandingSocietySelect');
+  sel.innerHTML   = _phOption('Select city…') + PAYMENTS_CITY_LIST.map(c => `<option value="${_escHtml(c)}">${_escHtml(titleCaseCity(c))}</option>`).join('');
+  mmSel.innerHTML = _phOption('Select MM…'); mmSel.disabled = true;
+  nmSel.innerHTML = _phOption('Select NM…'); nmSel.disabled = true;
+  soSel.innerHTML = _phOption('Select society…'); soSel.disabled = true;
+  document.getElementById('brandingSocietyOtherWrap').style.display = 'none';
+}
+
+async function onBrandingUmbCityChange() {
+  const city = document.getElementById('brandingCitySelect').value.trim().toLowerCase();
+  const mmSel = document.getElementById('brandingMmSelect');
+  const nmSel = document.getElementById('brandingNmSelect');
+  const soSel = document.getElementById('brandingSocietySelect');
+  mmSel.innerHTML = _phOption('Select MM…'); mmSel.disabled = true;
+  nmSel.innerHTML = _phOption('Select NM…'); nmSel.disabled = true;
+  soSel.innerHTML = _phOption('Select society…'); soSel.disabled = true;
+  document.getElementById('brandingSocietyOtherWrap').style.display = 'none';
+  if (!city) return;
+  const rows = await _loadSocietiesForCity(city);
+  const mms = _cleanDistinct(rows.map(r => r.mm_name));
+  mmSel.innerHTML = _phOption('Select MM…') + mms.map(m => `<option value="${_escHtml(m)}">${_escHtml(m)}</option>`).join('');
+  mmSel.disabled = mms.length === 0;
+}
+
+function onBrandingUmbMmChange() {
+  const city = document.getElementById('brandingCitySelect').value.trim().toLowerCase();
+  const selectedMm = document.getElementById('brandingMmSelect').value.trim();
+  const nmSel = document.getElementById('brandingNmSelect');
+  const soSel = document.getElementById('brandingSocietySelect');
+  nmSel.innerHTML = _phOption('Select NM…'); nmSel.disabled = true;
+  soSel.innerHTML = _phOption('Select society…'); soSel.disabled = true;
+  document.getElementById('brandingSocietyOtherWrap').style.display = 'none';
+  if (!selectedMm) return;
+  const rows = state.societyMaster[city] || [];
+  const nms = _cleanDistinct(rows.filter(r => _normKey(r.mm_name) === _normKey(selectedMm)).map(r => r.nm_name));
+  nmSel.innerHTML = _phOption('Select NM…') + nms.map(n => `<option value="${_escHtml(n)}">${_escHtml(n)}</option>`).join('');
+  nmSel.disabled = nms.length === 0;
+}
+
+function onBrandingUmbNmChange() {
+  const city = document.getElementById('brandingCitySelect').value.trim().toLowerCase();
+  const selectedMm = document.getElementById('brandingMmSelect').value.trim();
+  const selectedNm = document.getElementById('brandingNmSelect').value.trim();
+  const soSel = document.getElementById('brandingSocietySelect');
+  soSel.innerHTML = _phOption('Select society…'); soSel.disabled = true;
+  document.getElementById('brandingSocietyOtherWrap').style.display = 'none';
+  if (!selectedNm) return;
+  const rows = state.societyMaster[city] || [];
+  const socs = _cleanDistinct(rows
+    .filter(r => _normKey(r.mm_name) === _normKey(selectedMm) && _normKey(r.nm_name) === _normKey(selectedNm))
+    .map(r => r.society_name));
+  const opts = [_phOption('Select society…')]
+    .concat(socs.map(s => `<option value="${_escHtml(s)}">${_escHtml(s)}</option>`))
+    .concat(['<option value="__OTHER__">Others (type manually)</option>']);
+  soSel.innerHTML = opts.join('');
+  soSel.disabled = false;
+}
+
+function onBrandingSocietyChange() {
+  const soSel = document.getElementById('brandingSocietySelect');
+  const otherWrap = document.getElementById('brandingSocietyOtherWrap');
+  if (soSel.value === '__OTHER__') {
+    otherWrap.style.display = '';
+    document.getElementById('brandingSocietyOther').focus();
+  } else {
+    otherWrap.style.display = 'none';
+    document.getElementById('brandingSocietyOther').value = '';
+  }
+}
+
+function captureBrandingLatLong() {
+  const btn = document.getElementById('brandingGpsBtn');
+  const status = document.getElementById('brandingGpsStatus');
+  const out = document.getElementById('brandingLatLong');
+  hideMsg('brandingError');
+  if (!navigator.geolocation) {
+    showError('brandingError', 'Geolocation is not supported on this browser.');
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Capturing…';
+  status.textContent = 'Getting your current location…';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      state.brandingLat = pos.coords.latitude;
+      state.brandingLon = pos.coords.longitude;
+      const acc = Math.round(pos.coords.accuracy || 0);
+      out.value = `${state.brandingLat.toFixed(6)}, ${state.brandingLon.toFixed(6)}`;
+      status.textContent = acc ? `Captured · accuracy ±${acc}m` : 'Captured';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-refresh"></i> Re-capture Lat Long';
+    },
+    err => {
+      let msg = 'Could not capture location. ';
+      if (err.code === 1) msg += 'Please allow location permission in your browser.';
+      else if (err.code === 2) msg += 'Location signal unavailable. Try moving outside.';
+      else msg += 'Please try again.';
+      showError('brandingError', msg);
+      status.textContent = 'Location not captured.';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="ti ti-current-location"></i> Capture Lat Long';
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+  );
+}
+
+async function onBrandingMediaFile(inputEl) {
+  const statusEl = document.getElementById('brandingMediaStatus');
+  const file = inputEl.files && inputEl.files[0];
+  state.brandingMedia = null;
+  if (!file) {
+    if (statusEl) { statusEl.textContent = ''; statusEl.className = 'pay-file-status'; }
+    return;
+  }
+  if (statusEl) { statusEl.textContent = 'Processing…'; statusEl.className = 'pay-file-status'; }
+  try {
+    let blob = file;
+    let mime = file.type || 'application/octet-stream';
+    if (mime.indexOf('image/') === 0) {
+      try {
+        blob = await _compressImage(file, PAYMENTS_IMG_MAX_DIM, PAYMENTS_IMG_QUALITY);
+        mime = 'image/jpeg';
+      } catch (e) { /* keep original image if compression fails */ }
+    }
+    if (blob.size > BRANDING_MEDIA_MAX_FILE_BYTES) {
+      if (statusEl) {
+        statusEl.textContent = `Too large (${(blob.size/1024/1024).toFixed(1)} MB). Max 20 MB.`;
+        statusEl.className = 'pay-file-status err';
+      }
+      inputEl.value = '';
+      return;
+    }
+    const base64 = await _blobToBase64(blob);
+    state.brandingMedia = { base64, mime, filename: file.name, size: blob.size };
+    if (statusEl) {
+      statusEl.innerHTML = `<i class="ti ti-file-check" style="vertical-align:-2px"></i> Attached · ${file.name} · ${(blob.size/1024).toFixed(0)} KB`;
+      statusEl.className = 'pay-file-status ok';
+    }
+  } catch (e) {
+    if (statusEl) { statusEl.textContent = 'Could not process the file. Try a different one.'; statusEl.className = 'pay-file-status err'; }
+    inputEl.value = '';
+  }
+}
+
 // Submit handler.
 async function submitBranding() {
   hideMsg('brandingError');
@@ -7624,6 +7887,7 @@ async function submitBranding() {
   if (!cfg) { showError('brandingError', 'Please select a branding type first.'); return; }
 
   const isAudit = cfg.pattern === 'audit';
+  const isUmberella = cfg.pattern === 'umberella';
   const submissionType = state.brandingSubmissionType || '';
 
   const city  = document.getElementById('brandingCitySelect').value.trim();
@@ -7645,21 +7909,50 @@ async function submitBranding() {
 
   const executed = parseInt(executedRaw || '0', 10);
   if (Number.isNaN(executed) || executed < 0) {
-    showError('brandingError', 'Count must be a whole number, zero or greater.');
+    showError('brandingError', isUmberella ? 'Quantity must be a whole number, zero or greater.' : 'Count must be a whole number, zero or greater.');
     return;
   }
 
   // Planned is captured only when the Planned box is shown — i.e. column R
   // grants it (state.brandingPlannedAccess) AND it's not an Audit/Replacement row.
-  // v6.4: when hidden, planned is not validated or sent (backend defaults it to 0).
   let plannedNum = null;
   const needsPlanned = state.brandingPlannedAccess &&
+                       !isUmberella &&
                        !(isAudit && (submissionType === 'Audit' || submissionType === 'Replacement'));
   if (needsPlanned) {
     plannedNum = parseInt(plannedRaw || '0', 10);
     if (Number.isNaN(plannedNum) || plannedNum < 0) {
       showError('brandingError', 'Planned must be a whole number, zero or greater.');
       return;
+    }
+  }
+
+  let society = '';
+  let isOtherSociety = false;
+  let managerName = '';
+  let managerNumber = '';
+  if (isUmberella) {
+    const soSel = document.getElementById('brandingSocietySelect').value.trim();
+    const soOther = document.getElementById('brandingSocietyOther').value.trim();
+    isOtherSociety = (soSel === '__OTHER__');
+    society = isOtherSociety ? soOther : soSel;
+    managerName = document.getElementById('brandingManagerName').value.trim();
+    managerNumber = document.getElementById('brandingManagerNumber').value.trim();
+
+    if (!submissionType || ['Execution','Audit','Replacement'].indexOf(submissionType) === -1) {
+      showError('brandingError', 'Please select Execution, Audit or Replacement.'); return;
+    }
+    if (!society) {
+      showError('brandingError', isOtherSociety ? 'Please type the society name.' : 'Please select a society.'); return;
+    }
+    if (executed <= 0) {
+      showError('brandingError', 'Quantity is required and must be greater than 0.'); return;
+    }
+    if (state.brandingLat === null || state.brandingLon === null) {
+      showError('brandingError', 'Please capture Lat Long before submitting.'); return;
+    }
+    if (!state.brandingMedia) {
+      showError('brandingError', 'Please attach an image or video proof.'); return;
     }
   }
 
@@ -7687,7 +7980,20 @@ async function submitBranding() {
     notes:          notes,
   };
   if (needsPlanned) payload.planned = plannedNum;
-  if (isAudit)      payload.submission_type = submissionType;
+  if (isAudit || isUmberella) payload.submission_type = submissionType;
+
+  if (isUmberella) {
+    payload.society_name = society;
+    payload.is_other_society = isOtherSociety;
+    payload.quantity = executed;
+    payload.society_manager_name = managerName;
+    payload.society_manager_number = managerNumber;
+    payload.latitude = state.brandingLat;
+    payload.longitude = state.brandingLon;
+    payload.media_base64 = state.brandingMedia.base64;
+    payload.media_mime = state.brandingMedia.mime;
+    payload.media_filename = submissionId + '_' + (state.brandingMedia.filename || 'proof.bin');
+  }
 
   btn.disabled = true; btn.textContent = 'Submitting…';
   try {
@@ -7695,16 +8001,20 @@ async function submitBranding() {
     // Build the success detail line.
     const parts = [];
     parts.push(`<b>${cfg.title}</b>`);
-    if (isAudit) parts.push(submissionType);
+    if (isAudit || isUmberella) parts.push(submissionType);
     parts.push(`${titleCaseCity(city)} · ${nm}`);
-    if (needsPlanned) {
+    if (isUmberella) {
+      parts.push(`Society: ${society}`);
+      parts.push(`Quantity: ${executed}`);
+      parts.push(`Lat Long: ${state.brandingLat.toFixed(6)}, ${state.brandingLon.toFixed(6)}`);
+      parts.push('Media proof attached');
+    } else if (needsPlanned) {
       parts.push(`Planned: ${plannedNum}, Executed: ${executed}`);
     } else if (submissionType === 'Replacement') {
       parts.push(`Replacement Count: ${executed}`);
     } else if (submissionType === 'Audit') {
       parts.push(`Live Count: ${executed}`);
     } else {
-      // v6.4 — single-form with Planned hidden (non-central): plain Executed count.
       parts.push(`Executed: ${executed}`);
     }
     parts.push(`Date: ${date}`);
