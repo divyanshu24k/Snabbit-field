@@ -2903,6 +2903,8 @@ const CONFIG = {
   // (in apps_script_v5.9.gs) — the client never needs them.
   PAYMENTS_SHEET_ID:         '1XWEIGJC_3Xuam8k3JFh735EFniBJe-7kyme0-O3RItk',
   SOCIETY_MASTER_SHEET_ID:   '1eXvwYpZA0yLkNDMv116RZ4rW0Xd736unLxB8QRkl3ng',
+  // City/MM/NM hierarchy is read server-side via Apps Script because this sheet is company-restricted.
+  CITY_MM_NM_SOURCE_SHEET_ID: '1h3n7wMekVqLa1Hc4rErrgdwkdSfnox9zBKAezhqG0rE',
   RADIUS_M:        150,
   SESSION_HOURS:   24,
   SOCIETY_CODE:    'SNABBIT',
@@ -7573,39 +7575,61 @@ function openBrandingForm(submissionType) {
   navigate('screen-branding-form');
 }
 
-// Loads { city, mm, nm } rows from the Transfer_Tab via CSV export.
-// Same sheet (SUBMIT_SHEET_ID) the row-transfer feature already uses.
-async function loadCityMmNmData() {
-  if (state.cityMmNmLoaded) return;
+// Loads { city, mm, nm } rows from the company-restricted City_MM_NM source sheet.
+// The browser does NOT read that sheet directly. Apps Script reads it server-side
+// using the deployer account and returns only the safe dropdown fields.
+async function loadCityMmNmData(force = false) {
+  if (state.cityMmNmLoaded && !force) return;
   try {
-    // The Transfer_Tab gid isn't known up front; use the spreadsheet name-based export.
-    const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SUBMIT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Transfer_Tab`;
-    const res = await fetch(url);
-    const text = await res.text();
-    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
-      console.warn('Transfer_Tab not accessible — sheet may not be publicly readable.');
-      return;
-    }
-    const rows = parseCSV(text);
-    if (rows.length < 2) return;
-    // Header: A City | B MM | C NM
+    const data = await checkAppsScriptAction('getCityMMNMMaster');
+    const rows = Array.isArray(data.rows) ? data.rows : [];
     const out = [];
-    for (let i = 1; i < rows.length; i++) {
-      const r = rows[i];
-      const city = String(r[0] || '').trim();
-      const mm   = String(r[1] || '').trim();
-      const nm   = String(r[2] || '').trim();
+    for (const r of rows) {
+      const city = String(r.city || '').trim();
+      const mm   = String(r.mm   || '').trim();
+      const nm   = String(r.nm   || '').trim();
       if (city && mm && nm) out.push({ city, mm, nm });
     }
     state.cityMmNmData   = out;
     state.cityMmNmLoaded = true;
-    // If the form is currently visible, refresh dropdowns.
+
+    // If any live screen is open, refresh its dropdowns after the async load completes.
     if (document.getElementById('screen-branding-form').classList.contains('active')) {
       populateBrandingCityDropdown();
     }
+    if (document.getElementById('screen-payments-form').classList.contains('active')) {
+      const code = state.paymentsSubFeature;
+      if (code === 'SP10U' || code === 'SP10O') _populateSocietyDropdowns();
+      else if (code === 'VP') _populateCitySelectFromMaster('payVpCitySelect');
+      else if (code === 'PP') _populateCitySelectFromMaster('payPpCitySelect');
+    }
   } catch (e) {
-    console.warn('Failed to load Transfer_Tab', e);
+    console.warn('Failed to load City/MM/NM source from Apps Script', e);
+    state.cityMmNmLoaded = false;
   }
+}
+
+function _cityMmNmCities() {
+  const vals = (state.cityMmNmData || []).map(r => r.city);
+  const clean = _cleanDistinct(vals);
+  return clean.length ? clean : PAYMENTS_CITY_LIST.slice();
+}
+
+function _cityMmNmRowsFor(city) {
+  const cKey = _normKey(city);
+  return (state.cityMmNmData || []).filter(r => _normKey(r.city) === cKey);
+}
+
+function _cityMmNmMmsForCity(city) {
+  return _cleanDistinct(_cityMmNmRowsFor(city).map(r => r.mm));
+}
+
+function _cityMmNmNmsForCityMm(city, mm) {
+  const cKey = _normKey(city);
+  const mKey = _normKey(mm);
+  return _cleanDistinct((state.cityMmNmData || [])
+    .filter(r => _normKey(r.city) === cKey && _normKey(r.mm) === mKey)
+    .map(r => r.nm));
 }
 
 // Build the City dropdown from cached data.
@@ -7734,7 +7758,18 @@ function populateBrandingUmbCityDropdown() {
   const mmSel = document.getElementById('brandingMmSelect');
   const nmSel = document.getElementById('brandingNmSelect');
   const soSel = document.getElementById('brandingSocietySelect');
-  sel.innerHTML   = _phOption('Select city…') + PAYMENTS_CITY_LIST.map(c => `<option value="${_escHtml(c)}">${_escHtml(titleCaseCity(c))}</option>`).join('');
+
+  if (!state.cityMmNmLoaded) {
+    sel.innerHTML = '<option value="" selected disabled hidden>Loading cities…</option>';
+    mmSel.innerHTML = _phOption('Select MM…'); mmSel.disabled = true;
+    nmSel.innerHTML = _phOption('Select NM…'); nmSel.disabled = true;
+    soSel.innerHTML = _phOption('Select society…'); soSel.disabled = true;
+    loadCityMmNmData().then(populateBrandingUmbCityDropdown);
+    return;
+  }
+
+  const cities = _cityMmNmCities();
+  sel.innerHTML   = _phOption('Select city…') + cities.map(c => `<option value="${_escHtml(c)}">${_escHtml(titleCaseCity(c))}</option>`).join('');
   mmSel.innerHTML = _phOption('Select MM…'); mmSel.disabled = true;
   nmSel.innerHTML = _phOption('Select NM…'); nmSel.disabled = true;
   soSel.innerHTML = _phOption('Select society…'); soSel.disabled = true;
@@ -7742,7 +7777,7 @@ function populateBrandingUmbCityDropdown() {
 }
 
 async function onBrandingUmbCityChange() {
-  const city = document.getElementById('brandingCitySelect').value.trim().toLowerCase();
+  const city = document.getElementById('brandingCitySelect').value.trim();
   const mmSel = document.getElementById('brandingMmSelect');
   const nmSel = document.getElementById('brandingNmSelect');
   const soSel = document.getElementById('brandingSocietySelect');
@@ -7751,14 +7786,17 @@ async function onBrandingUmbCityChange() {
   soSel.innerHTML = _phOption('Select society…'); soSel.disabled = true;
   document.getElementById('brandingSocietyOtherWrap').style.display = 'none';
   if (!city) return;
-  const rows = await _loadSocietiesForCity(city);
-  const mms = _cleanDistinct(rows.map(r => r.mm_name));
+
+  const mms = _cityMmNmMmsForCity(city);
   mmSel.innerHTML = _phOption('Select MM…') + mms.map(m => `<option value="${_escHtml(m)}">${_escHtml(m)}</option>`).join('');
   mmSel.disabled = mms.length === 0;
+
+  // Prefetch society names for this city in the background; society matching still happens by NM later.
+  _loadSocietiesForCity(city).catch(e => console.warn('Society master city load failed', e));
 }
 
 function onBrandingUmbMmChange() {
-  const city = document.getElementById('brandingCitySelect').value.trim().toLowerCase();
+  const city = document.getElementById('brandingCitySelect').value.trim();
   const selectedMm = document.getElementById('brandingMmSelect').value.trim();
   const nmSel = document.getElementById('brandingNmSelect');
   const soSel = document.getElementById('brandingSocietySelect');
@@ -7766,23 +7804,24 @@ function onBrandingUmbMmChange() {
   soSel.innerHTML = _phOption('Select society…'); soSel.disabled = true;
   document.getElementById('brandingSocietyOtherWrap').style.display = 'none';
   if (!selectedMm) return;
-  const rows = state.societyMaster[city] || [];
-  const nms = _cleanDistinct(rows.filter(r => _normKey(r.mm_name) === _normKey(selectedMm)).map(r => r.nm_name));
+
+  const nms = _cityMmNmNmsForCityMm(city, selectedMm);
   nmSel.innerHTML = _phOption('Select NM…') + nms.map(n => `<option value="${_escHtml(n)}">${_escHtml(n)}</option>`).join('');
   nmSel.disabled = nms.length === 0;
 }
 
-function onBrandingUmbNmChange() {
-  const city = document.getElementById('brandingCitySelect').value.trim().toLowerCase();
-  const selectedMm = document.getElementById('brandingMmSelect').value.trim();
+async function onBrandingUmbNmChange() {
+  const city = document.getElementById('brandingCitySelect').value.trim();
   const selectedNm = document.getElementById('brandingNmSelect').value.trim();
   const soSel = document.getElementById('brandingSocietySelect');
-  soSel.innerHTML = _phOption('Select society…'); soSel.disabled = true;
+  soSel.innerHTML = _phOption('Loading societies…'); soSel.disabled = true;
   document.getElementById('brandingSocietyOtherWrap').style.display = 'none';
   if (!selectedNm) return;
-  const rows = state.societyMaster[city] || [];
+
+  // Society Names sheet may have old/missing MM values (#N/A), so match by City tab + NM only.
+  const rows = await _loadSocietiesForCity(city);
   const socs = _cleanDistinct(rows
-    .filter(r => _normKey(r.mm_name) === _normKey(selectedMm) && _normKey(r.nm_name) === _normKey(selectedNm))
+    .filter(r => _normKey(r.nm_name) === _normKey(selectedNm))
     .map(r => r.society_name));
   const opts = [_phOption('Select society…')]
     .concat(socs.map(s => `<option value="${_escHtml(s)}">${_escHtml(s)}</option>`))
@@ -8304,10 +8343,10 @@ async function openPaymentsForm(code) {
     _populateMonthSelect('payRmbInvoiceMonth');
     onRmbTypeChange();      // sets invoice-number required/optional
   } else if (code === 'VP') {
-    _populateCitySelectFromMaster('payVpCitySelect');
+    await _populateCitySelectFromMaster('payVpCitySelect');
     _populateMonthSelect('payVpMonth');
   } else if (code === 'PP') {
-    _populateCitySelectFromMaster('payPpCitySelect');
+    await _populateCitySelectFromMaster('payPpCitySelect');
     _populateMonthSelect('payPpMonth');
   }
 
@@ -8453,17 +8492,11 @@ function _extractMasterRows(parsed) {
 }
 
 async function _loadSocietyMasterCities() {
-  if (state._societyMasterCitiesLoaded) return state._societyMasterCities || [];
-  // gviz returns sheet metadata; we use the "list all sheets" approach via the
-  // export endpoint with a missing gid (it errors with a list of valid gids).
-  // Simpler: try fetching the first city tab name from a known place — but
-  // since cities are dynamic, the cleanest reliable approach is to use the
-  // Sheets export?format=xlsx ... too heavy.
-  //
-  // Pragmatic compromise: ship a static city list (matches the 10 city tabs
-  // the admin created). If the admin adds an 11th, they update CITY_LIST.
-  // This avoids needing an extra Apps Script roundtrip on screen-open.
-  state._societyMasterCities = PAYMENTS_CITY_LIST.slice();
+  // Kept for compatibility with older code paths. The actual City dropdown now
+  // comes from the server-side City/MM/NM source sheet, with the static list only
+  // as a fallback if that source is temporarily unavailable.
+  await loadCityMmNmData();
+  state._societyMasterCities = _cityMmNmCities();
   state._societyMasterCitiesLoaded = true;
   return state._societyMasterCities;
 }
@@ -8491,11 +8524,11 @@ async function _loadSocietiesForCity(cityLower) {
 }
 
 async function _populateSocietyDropdowns() {
-  // Cities first (from static list — kept in sync with the master sheet tabs).
+  // City/MM/NM comes from the company-restricted source sheet via Apps Script.
   const cities = await _loadSocietyMasterCities();
   const sel = document.getElementById('payCitySelect');
   sel.innerHTML = _phOption('Select city…') +
-    cities.map(c => `<option value="${c}">${titleCaseCity(c)}</option>`).join('');
+    cities.map(c => `<option value="${_escHtml(c)}">${_escHtml(titleCaseCity(c))}</option>`).join('');
   sel.onchange = onPaymentsCityChange;
 
   // MM/NM/Society dropdowns start disabled.
@@ -8510,15 +8543,17 @@ async function _populateSocietyDropdowns() {
   so.onchange = onPaymentsSocietyChange;
 }
 
-function _populateCitySelectFromMaster(selectId) {
+async function _populateCitySelectFromMaster(selectId) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
+  await loadCityMmNmData();
+  const cities = _cityMmNmCities();
   sel.innerHTML = _phOption('Select city…') +
-    PAYMENTS_CITY_LIST.map(c => `<option value="${c}">${titleCaseCity(c)}</option>`).join('');
+    cities.map(c => `<option value="${_escHtml(c)}">${_escHtml(titleCaseCity(c))}</option>`).join('');
 }
 
 async function onPaymentsCityChange() {
-  const city = document.getElementById('payCitySelect').value.trim().toLowerCase();
+  const city = document.getElementById('payCitySelect').value.trim();
   const mm = document.getElementById('payMmSelect');
   const nm = document.getElementById('payNmSelect');
   const so = document.getElementById('paySocietySelect');
@@ -8529,16 +8564,17 @@ async function onPaymentsCityChange() {
   document.getElementById('paySocietyOtherWrap').style.display = 'none';
   if (!city) return;
 
-  const rows = await _loadSocietiesForCity(city);
-  // v6.8 - distinct, de-duplicated (case-insensitive), junk-filtered MM list.
-  const mms = _cleanDistinct(rows.map(r => r.mm_name));
+  const mms = _cityMmNmMmsForCity(city);
   mm.innerHTML = _phOption('Select MM…') +
     mms.map(m => `<option value="${_escHtml(m)}">${_escHtml(m)}</option>`).join('');
   mm.disabled = mms.length === 0;
+
+  // Prefetch society names for this city; final society matching is by NM only.
+  _loadSocietiesForCity(city).catch(e => console.warn('Society master city load failed', e));
 }
 
 function onPaymentsMmChange() {
-  const city = document.getElementById('payCitySelect').value.trim().toLowerCase();
+  const city = document.getElementById('payCitySelect').value.trim();
   const selectedMm = document.getElementById('payMmSelect').value.trim();
   const nm = document.getElementById('payNmSelect');
   const so = document.getElementById('paySocietySelect');
@@ -8548,33 +8584,26 @@ function onPaymentsMmChange() {
   document.getElementById('paySocietyOtherWrap').style.display = 'none';
   if (!selectedMm) return;
 
-  // v6.8 - match rows case-insensitively (display labels may be re-cased by dedupe).
-  const rows = state.societyMaster[city] || [];
-  const nmVals = [];
-  for (const r of rows) if (_normKey(r.mm_name) === _normKey(selectedMm) && r.nm_name) nmVals.push(r.nm_name);
-  const nms = _cleanDistinct(nmVals);
+  const nms = _cityMmNmNmsForCityMm(city, selectedMm);
   nm.innerHTML = _phOption('Select NM…') +
     nms.map(n => `<option value="${_escHtml(n)}">${_escHtml(n)}</option>`).join('');
   nm.disabled = nms.length === 0;
 }
 
-function onPaymentsNmChange() {
-  const city = document.getElementById('payCitySelect').value.trim().toLowerCase();
-  const selectedMm = document.getElementById('payMmSelect').value.trim();
+async function onPaymentsNmChange() {
+  const city = document.getElementById('payCitySelect').value.trim();
   const selectedNm = document.getElementById('payNmSelect').value.trim();
   const so = document.getElementById('paySocietySelect');
-  so.innerHTML = _phOption('Select society…');
+  so.innerHTML = _phOption('Loading societies…');
   so.disabled = true;
   document.getElementById('paySocietyOtherWrap').style.display = 'none';
   if (!selectedNm) return;
 
-  // v6.8 - case-insensitive MM+NM match, de-duplicated society list.
-  const rows = state.societyMaster[city] || [];
+  // Society Names sheet can have stale/missing MM values (#N/A). Match society names by City tab + NM only.
+  const rows = await _loadSocietiesForCity(city);
   const socVals = [];
   for (const r of rows) {
-    if (_normKey(r.mm_name) === _normKey(selectedMm) && _normKey(r.nm_name) === _normKey(selectedNm) && r.society_name) {
-      socVals.push(r.society_name);
-    }
+    if (_normKey(r.nm_name) === _normKey(selectedNm) && r.society_name) socVals.push(r.society_name);
   }
   const socs = _cleanDistinct(socVals);
   // Always include "Others" at the bottom - even when there are real societies.
