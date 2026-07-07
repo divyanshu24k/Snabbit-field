@@ -3234,6 +3234,11 @@ async function loadCreds() {
 // ─────────────────────────────────────────────────────────
 // LOGIN
 // ─────────────────────────────────────────────────────────
+// company-migration: login now goes through the Apps Script `login` endpoint.
+// The browser sends username + password; the server checks the PRIVATE creds
+// sheet and returns ONLY this user's access flags (never a password, never the
+// whole sheet). text/plain keeps this a "simple" request so the JSON response
+// is readable; the password travels in the POST body, never in the URL.
 async function doLogin() {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value.trim();
@@ -3242,62 +3247,57 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx, brandingIdx, paymentsIdx, tlTrackerIdx } = await loadCreds();
-    const match = rows.slice(headerIdx + 1).find(r =>
-      String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
-      String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
-    );
-    if (!match) {
-      showError('loginError', 'Invalid username or password. Please try again.');
-      btn.disabled = false; btn.textContent = 'Sign in'; return;
-    }
-    state.username          = username.toLowerCase().trim();
-    state.agentName         = match[nIdx] || username;
-    state.agentCode         = match[cIdx] || username;
-    state.blastAccess       = toBoolean(match[blastIdx]);
-    state.societyAccess     = toBoolean(match[socIdx]);
-    state.leaderboardAccess = lbIdx >= 0 ? toBoolean(match[lbIdx]) : false;
-    state.slotCheckerAccess = slotIdx >= 0 ? toBoolean(match[slotIdx]) : false;
-    state.onboarded         = onbIdx >= 0 ? toBoolean(match[onbIdx]) : false;
-    state.displayName       = dispNameIdx >= 0 ? String(match[dispNameIdx] || '').trim() : '';
-    state.referralCode      = refCodeIdx >= 0 ? String(match[refCodeIdx] || '').trim() : '';
-    // v5.4 — Inventory access + scope
-    state.inventoryUpdateAccess    = invUpdIdx  >= 0 ? toBoolean(match[invUpdIdx])  : false;
-    state.inventoryDashboardAccess = invDashIdx >= 0 ? toBoolean(match[invDashIdx]) : false;
-    state.inventoryRole            = invRoleIdx >= 0 ? String(match[invRoleIdx] || '').trim().toLowerCase() : '';
-    state.assignedCity             = assignedCityIdx >= 0 ? String(match[assignedCityIdx] || '').trim() : '';
-    state.assignedCities           = _parseAssignedCities(state.assignedCity, state.inventoryRole);
-    // v5.8 — Offline Branding access
-    state.brandingAccess           = brandingIdx >= 0 ? toBoolean(match[brandingIdx]) : false;
-    // v6.4 — Planned-box gate: show the Planned field in ALL branding forms only when
-    // the inventory role reads exactly "central".
-    // v6.9 — derive from the header-matched inventoryRole (was a fragile positional match[17]).
-    state.brandingPlannedAccess    = (state.inventoryRole === 'central');
-    // v5.9 — Payments access (parse comma-separated codes from column T)
-    state.paymentsAccess           = paymentsIdx >= 0 ? parsePaymentsAccess(match[paymentsIdx]) : [];
-    // v6.7 — TL Tracker access (dedicated boolean column)
-    state.tlTrackerAccess          = tlTrackerIdx >= 0 ? toBoolean(match[tlTrackerIdx]) : false;
+    const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'login', username: username, password: password })
+    });
+    const data = await res.json();
 
-    // If user has leaderboard access but never onboarded AND has no name in column M,
+    if (!data || data.ok !== true) {
+      showError('loginError', 'Invalid username or password. Please try again.');
+      btn.disabled = false; btn.textContent = 'Sign in';
+      return;
+    }
+
+    state.username          = data.username || username.toLowerCase().trim();
+    state.agentName         = data.agentName || username;
+    state.agentCode         = data.agentCode || username;
+    state.blastAccess       = !!data.blastAccess;
+    state.societyAccess     = !!data.societyAccess;
+    state.leaderboardAccess = !!data.leaderboardAccess;
+    state.slotCheckerAccess = !!data.slotCheckerAccess;
+    state.onboarded         = !!data.onboarded;
+    state.displayName       = data.displayName || '';
+    state.referralCode      = data.referralCode || '';
+    // Inventory access + scope
+    state.inventoryUpdateAccess    = !!data.inventoryUpdateAccess;
+    state.inventoryDashboardAccess = !!data.inventoryDashboardAccess;
+    state.inventoryRole            = data.inventoryRole || '';
+    state.assignedCity             = data.assignedCity || '';
+    state.assignedCities           = _parseAssignedCities(state.assignedCity, state.inventoryRole);
+    // Offline Branding access + Planned-box gate
+    state.brandingAccess           = !!data.brandingAccess;
+    state.brandingPlannedAccess    = (state.inventoryRole === 'central');
+    // Payments access (server returns raw comma-separated string; existing parser handles it)
+    state.paymentsAccess           = parsePaymentsAccess(data.paymentsAccess);
+    // TL Tracker access
+    state.tlTrackerAccess          = !!data.tlTrackerAccess;
+
+    // If user has leaderboard access but never onboarded AND has no display name,
     // force them through the one-time onboarding form before home.
     const needsOnboarding = state.leaderboardAccess && !state.onboarded && !state.displayName;
 
-    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess, state.brandingPlannedAccess, state.tlTrackerAccess);
+    saveSession(state.username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess, state.brandingPlannedAccess, state.tlTrackerAccess);
     if (needsOnboarding) {
-      // Cache duplicates list for warning before they pick a code.
-      state._allRefCodes = rows.slice(headerIdx + 1)
-        .map(r => refCodeIdx >= 0 ? String(r[refCodeIdx] || '').trim().toLowerCase() : '')
-        .filter(c => c !== '');
+      // Ref-code list for the duplicate warning now comes from the server response.
+      state._allRefCodes = Array.isArray(data.allRefCodes) ? data.allRefCodes : [];
       showOnboardingScreen();
     } else {
       onLoggedIn();
     }
   } catch(e) {
-    if (e.message === 'SHEET_ACCESS_DENIED') {
-      showError('loginError', 'Login sheet is not accessible. Please contact your admin to share the credentials sheet.');
-    } else {
-      showError('loginError', 'Could not reach server. Check your internet connection.');
-    }
+    showError('loginError', 'Could not reach server. Check your internet connection.');
     btn.disabled = false; btn.textContent = 'Sign in';
   }
 }
