@@ -1656,6 +1656,60 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* ── TEAM ATTENDANCE ── */
+  .att-summary {
+    font-size: 12px; color: var(--muted); margin: 4px 0 12px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px; line-height: 1.9;
+  }
+  .att-summary b { color: var(--navy); font-weight: 600; }
+  .att-city-fixed {
+    align-items: center; gap: 6px;
+    background: var(--accent-soft); border: 1px solid var(--accent-border);
+    color: var(--accent-dark); font-weight: 600; font-size: 13px;
+    padding: 8px 14px; border-radius: var(--radius-sm); margin-bottom: 14px;
+  }
+  .att-city-fixed .ti { font-size: 15px; }
+  .att-legend { display: block; margin-top: 6px; }
+  .att-lg {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; border-radius: 4px; font-size: 11px;
+    font-weight: 700; margin: 0 3px 0 10px; padding: 0 4px;
+  }
+  .att-scroll {
+    overflow-x: auto; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--surface);
+    -webkit-overflow-scrolling: touch;
+  }
+  .att-table { border-collapse: separate; border-spacing: 0; font-size: 12px; }
+  .att-table th, .att-table td {
+    padding: 7px 6px; text-align: center; white-space: nowrap;
+    border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+  }
+  .att-table thead th {
+    position: sticky; top: 0; z-index: 2; background: var(--surface2);
+    color: var(--muted); font-weight: 600; font-size: 11px;
+  }
+  .att-name-col {
+    position: sticky; left: 0; z-index: 3; background: var(--surface);
+    text-align: left !important; min-width: 132px; max-width: 132px;
+    font-weight: 500; color: var(--navy); white-space: normal !important;
+    box-shadow: 1px 0 0 var(--border);
+  }
+  .att-table thead th.att-name-col { z-index: 4; background: var(--surface2); }
+  .att-mm { display: block; font-size: 10px; color: var(--muted-light); font-weight: 400; }
+  .att-cell { font-weight: 700; color: var(--navy); }
+  .att-p  { background: var(--success-soft); color: var(--success); }
+  .att-a  { background: var(--error-soft);   color: var(--error); }
+  .att-l  { background: var(--warning-soft); color: var(--warning); }
+  .att-h  { background: var(--surface2);     color: var(--muted); }
+  .att-hd { background: #EFF6FF;             color: #2563EB; }
+  .att-blank { background: var(--surface); color: var(--muted-light); }
+  .att-x  { background: #FDF4FF; color: #A21CAF; }
+  .att-tot { font-weight: 600; background: var(--surface2); font-variant-numeric: tabular-nums; }
+  .att-tot-p { color: var(--success); }
+  .att-tot-a { color: var(--error); }
+
   /* ── SCROLLBAR (subtle, modern) ── */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -2115,6 +2169,26 @@
   </div>
 </div>
 
+
+
+<!-- ════════════════ SCREEN: TEAM ATTENDANCE ════════════════ -->
+<div class="screen" id="screen-attendance">
+  <div class="big-label">Attendance</div>
+  <div class="big-title">Team Attendance</div>
+  <p class="sub">Pick a city to see everyone's day-by-day attendance for the current cycle.</p>
+  <div id="attError" class="error-msg"></div>
+  <!-- Fixed single-city label — shown when the TL is scoped to exactly one city -->
+  <div id="attCityFixed" class="att-city-fixed" style="display:none"></div>
+  <!-- City picker — shown only for multi-city managers / central users -->
+  <div class="input-wrap" id="attCityWrap" style="display:none">
+    <label>City</label>
+    <select id="attCitySelect" onchange="onAttendanceCityChange()">
+      <option value="" selected disabled hidden>Select city…</option>
+    </select>
+  </div>
+  <div id="attSummary" class="att-summary" style="display:none"></div>
+  <div id="attGridWrap"></div>
+</div>
 
 
 <!-- ════════════════ SCREEN: SLOT CHECKER ════════════════ -->
@@ -3035,6 +3109,10 @@ let state = {
   societyMaster:            {},     // { cityLower: [{society_name, nm_name, mm_name}, ...] }
   societyMasterLoaded:      {},     // { cityLower: true } — lazy-loaded per city
   paymentsFiles:            {},     // { slotKey: {base64, mime, filename, size} } for the open form
+  // Team Attendance module
+  attendanceAccess:         false,  // creds column "Attendance Access"
+  attendanceCities:         [],     // distinct cities from the payroll attendance sheet
+  attendanceCitiesLoaded:   false,
   // v6.7 — TL Incentive live tracker
   tlTrackerAccess:          false,  // creds column "TL Tracker Access"
   tlData:                   [],     // [{code, name, city, structure, w:[{target,ach,inc} x4], mo:{target,ach,inc}}]
@@ -3048,11 +3126,11 @@ let state = {
 // ─────────────────────────────────────────────────────────
 // SESSION
 // ─────────────────────────────────────────────────────────
-function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess, tlTrackerAccess) {
+function saveSession(username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess, brandingAccess, paymentsAccess, brandingPlannedAccess, tlTrackerAccess, attendanceAccess) {
   const expiry = Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000;
   localStorage.setItem('snabbit_session', JSON.stringify({
     username, name, agentCode, blastAccess, societyAccess, leaderboardAccess, slotCheckerAccess,
-    brandingAccess, paymentsAccess, brandingPlannedAccess, tlTrackerAccess,
+    brandingAccess, paymentsAccess, brandingPlannedAccess, tlTrackerAccess, attendanceAccess,
     // v6.9 - persist inventory access + scope so the inventory home cards (and city
     // scope) survive a page refresh. Read from state, set at the single call site below.
     inventoryUpdateAccess:    state.inventoryUpdateAccess,
@@ -3184,61 +3262,58 @@ function toBoolean(val) {
   return ['true','1','yes'].includes(String(val).toLowerCase().trim());
 }
 
+
 // ─────────────────────────────────────────────────────────
-// company-migration (batch 2): server-side sheet reader.
-// All bulk-data sheets moved into the company Shared Drive, so the browser can
-// no longer read them as public CSV. This calls the Apps Script `getSheetData`
-// endpoint (which reads the private sheet server-side as the deployer account)
-// and returns the sheet as a 2D array of strings — EXACTLY the shape parseCSV()
-// used to return. Downstream parsing in each loader is therefore unchanged.
-//   key : whitelisted key (db | performance | daily_perf | tl_incentive |
-//         incentive | slot_checker | product_catalog | society_master |
-//         inventory | payments_config)
-//   tab : optional tab/sheet name (e.g. 'Slabs', a city name, 'Inventory_Stock')
-// Throws on transport error, HTML (access denied), or a non-ok response so each
-// caller's existing try/catch and *_ACCESS_DENIED handling still triggers.
-async function fetchSheetData(key, tab) {
-  let url = CONFIG.APPS_SCRIPT_URL + '?action=getSheetData&key=' + encodeURIComponent(key);
-  if (tab) url += '&tab=' + encodeURIComponent(tab);
-  url += '&_ts=' + Date.now();
-  const res = await fetch(url, { method: 'GET' });
-  if (!res.ok) throw new Error('SHEET_ACCESS_DENIED');
+// CREDENTIALS — uses /export?format=csv (more reliable than gviz
+// when sheet has empty columns or unusual formatting).
+// Columns: S.No | Username | Password | Agent Name | Agent Code | Active | Blast Access | Society Access | Leaderboard Access | Onboarded | Name | Ref Code | Slot Checker Access
+// ─────────────────────────────────────────────────────────
+async function loadCreds() {
+  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.CREDS_SHEET_ID}/export?format=csv&gid=0`;
+  const res  = await fetch(url);
   const text = await res.text();
+  // If response is HTML it means the sheet is not publicly shared
   if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
     throw new Error('SHEET_ACCESS_DENIED');
   }
-  let data;
-  try { data = JSON.parse(text); }
-  catch (e) { throw new Error('SHEET_ACCESS_DENIED'); }
-  if (!data || data.ok !== true) {
-    throw new Error(data && data.error ? data.error : 'SHEET_ACCESS_DENIED');
-  }
-  return Array.isArray(data.values) ? data.values : [];
-}
-
-
-// ─────────────────────────────────────────────────────────
-// CREDENTIALS — DISABLED (company-migration, batch 2).
-// The credentials sheet is now PRIVATE in the company Shared Drive and must
-// never be read as public CSV by the browser. Login is validated server-side
-// via the `login` endpoint; the TL/Manager list comes from `getStaffDirectory`;
-// change-password verifies via `login`. This stub remains only so any stray
-// caller fails loudly instead of silently attempting a (now-forbidden) public
-// read. It intentionally does NOT touch the network.
-// ─────────────────────────────────────────────────────────
-async function loadCreds() {
-  throw new Error('loadCreds is disabled — credentials are read server-side only (login / getStaffDirectory).');
+  const rows = parseCSV(text);
+  const headerIdx = rows.findIndex(r => r.some(c => c.toLowerCase().includes('username')));
+  if (headerIdx === -1) throw new Error('Header not found');
+  const h = rows[headerIdx].map(c => c.toLowerCase().trim());
+  return {
+    rows, headerIdx,
+    uIdx:           h.findIndex(c => c.includes('username')),
+    pIdx:           h.findIndex(c => c.includes('password')),
+    nIdx:           h.findIndex(c => c.includes('agent name') || (c.includes('name') && !c.includes('user') && !c.includes('display'))),
+    cIdx:           h.findIndex(c => c.includes('agent code') || c.includes('code')),
+    aIdx:           h.findIndex(c => c === 'active'),
+    blastIdx:       h.findIndex(c => c.includes('blast')),
+    socIdx:         h.findIndex(c => c.includes('society')),
+    lbIdx:          h.findIndex(c => c.includes('leaderboard')),
+    slotIdx:        h.findIndex(c => c.includes('slot')),
+    onbIdx:         h.findIndex(c => c.includes('onboard')),
+    dispNameIdx:    h.findIndex((c, i) => i > 0 && c === 'name'),
+    refCodeIdx:     h.findIndex(c => c.includes('ref code') || c.includes('referral')),
+    // v5.4 — inventory columns (P, Q, R, S). Tolerant of header variants.
+    invUpdIdx:      h.findIndex(c => c.includes('inventory') && c.includes('update')),
+    invDashIdx:     h.findIndex(c => c.includes('inventory') && c.includes('dashboard')),
+    invRoleIdx:     h.findIndex(c => c.includes('inventory') && c.includes('role')),
+    assignedCityIdx:h.findIndex(c => c.includes('assigned') && c.includes('city')),
+    // v5.8 — Offline Branding access (column K — brandingAccess)
+    brandingIdx:    h.findIndex(c => c.includes('branding')),
+    // v5.9 — Payments access (column T — payments access). Free-text, comma-separated codes.
+    paymentsIdx:    h.findIndex(c => c.includes('payments') && c.includes('access')),
+    // v6.7 — TL Tracker access (new dedicated column). Boolean (TRUE/blank). Header match, not positional.
+    tlTrackerIdx:   h.findIndex(c => c.includes('tracker') || (c.includes('tl') && c.includes('tracker'))),
+    // Team Attendance access (new dedicated column "Attendance Access"). Boolean (TRUE/blank).
+    attendanceIdx:  h.findIndex(c => c.includes('attendance')),
+  };
 }
 
 
 // ─────────────────────────────────────────────────────────
 // LOGIN
 // ─────────────────────────────────────────────────────────
-// company-migration: login now goes through the Apps Script `login` endpoint.
-// The browser sends username + password; the server checks the PRIVATE creds
-// sheet and returns ONLY this user's access flags (never a password, never the
-// whole sheet). text/plain keeps this a "simple" request so the JSON response
-// is readable; the password travels in the POST body, never in the URL.
 async function doLogin() {
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value.trim();
@@ -3247,57 +3322,64 @@ async function doLogin() {
   if (!username || !password) { showError('loginError', 'Please enter your username and password.'); return; }
   btn.disabled = true; btn.textContent = 'Signing in…';
   try {
-    const res = await fetch(CONFIG.APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'login', username: username, password: password })
-    });
-    const data = await res.json();
-
-    if (!data || data.ok !== true) {
+    const { rows, headerIdx, uIdx, pIdx, nIdx, cIdx, aIdx, blastIdx, socIdx, lbIdx, slotIdx, onbIdx, dispNameIdx, refCodeIdx, invUpdIdx, invDashIdx, invRoleIdx, assignedCityIdx, brandingIdx, paymentsIdx, tlTrackerIdx, attendanceIdx } = await loadCreds();
+    const match = rows.slice(headerIdx + 1).find(r =>
+      String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
+      String(r[pIdx]||'').trim() === password && toBoolean(r[aIdx])
+    );
+    if (!match) {
       showError('loginError', 'Invalid username or password. Please try again.');
-      btn.disabled = false; btn.textContent = 'Sign in';
-      return;
+      btn.disabled = false; btn.textContent = 'Sign in'; return;
     }
-
-    state.username          = data.username || username.toLowerCase().trim();
-    state.agentName         = data.agentName || username;
-    state.agentCode         = data.agentCode || username;
-    state.blastAccess       = !!data.blastAccess;
-    state.societyAccess     = !!data.societyAccess;
-    state.leaderboardAccess = !!data.leaderboardAccess;
-    state.slotCheckerAccess = !!data.slotCheckerAccess;
-    state.onboarded         = !!data.onboarded;
-    state.displayName       = data.displayName || '';
-    state.referralCode      = data.referralCode || '';
-    // Inventory access + scope
-    state.inventoryUpdateAccess    = !!data.inventoryUpdateAccess;
-    state.inventoryDashboardAccess = !!data.inventoryDashboardAccess;
-    state.inventoryRole            = data.inventoryRole || '';
-    state.assignedCity             = data.assignedCity || '';
+    state.username          = username.toLowerCase().trim();
+    state.agentName         = match[nIdx] || username;
+    state.agentCode         = match[cIdx] || username;
+    state.blastAccess       = toBoolean(match[blastIdx]);
+    state.societyAccess     = toBoolean(match[socIdx]);
+    state.leaderboardAccess = lbIdx >= 0 ? toBoolean(match[lbIdx]) : false;
+    state.slotCheckerAccess = slotIdx >= 0 ? toBoolean(match[slotIdx]) : false;
+    state.onboarded         = onbIdx >= 0 ? toBoolean(match[onbIdx]) : false;
+    state.displayName       = dispNameIdx >= 0 ? String(match[dispNameIdx] || '').trim() : '';
+    state.referralCode      = refCodeIdx >= 0 ? String(match[refCodeIdx] || '').trim() : '';
+    // v5.4 — Inventory access + scope
+    state.inventoryUpdateAccess    = invUpdIdx  >= 0 ? toBoolean(match[invUpdIdx])  : false;
+    state.inventoryDashboardAccess = invDashIdx >= 0 ? toBoolean(match[invDashIdx]) : false;
+    state.inventoryRole            = invRoleIdx >= 0 ? String(match[invRoleIdx] || '').trim().toLowerCase() : '';
+    state.assignedCity             = assignedCityIdx >= 0 ? String(match[assignedCityIdx] || '').trim() : '';
     state.assignedCities           = _parseAssignedCities(state.assignedCity, state.inventoryRole);
-    // Offline Branding access + Planned-box gate
-    state.brandingAccess           = !!data.brandingAccess;
+    // v5.8 — Offline Branding access
+    state.brandingAccess           = brandingIdx >= 0 ? toBoolean(match[brandingIdx]) : false;
+    // v6.4 — Planned-box gate: show the Planned field in ALL branding forms only when
+    // the inventory role reads exactly "central".
+    // v6.9 — derive from the header-matched inventoryRole (was a fragile positional match[17]).
     state.brandingPlannedAccess    = (state.inventoryRole === 'central');
-    // Payments access (server returns raw comma-separated string; existing parser handles it)
-    state.paymentsAccess           = parsePaymentsAccess(data.paymentsAccess);
-    // TL Tracker access
-    state.tlTrackerAccess          = !!data.tlTrackerAccess;
+    // v5.9 — Payments access (parse comma-separated codes from column T)
+    state.paymentsAccess           = paymentsIdx >= 0 ? parsePaymentsAccess(match[paymentsIdx]) : [];
+    // v6.7 — TL Tracker access (dedicated boolean column)
+    state.tlTrackerAccess          = tlTrackerIdx >= 0 ? toBoolean(match[tlTrackerIdx]) : false;
+    // Team Attendance access (dedicated boolean column)
+    state.attendanceAccess         = attendanceIdx >= 0 ? toBoolean(match[attendanceIdx]) : false;
 
-    // If user has leaderboard access but never onboarded AND has no display name,
+    // If user has leaderboard access but never onboarded AND has no name in column M,
     // force them through the one-time onboarding form before home.
     const needsOnboarding = state.leaderboardAccess && !state.onboarded && !state.displayName;
 
-    saveSession(state.username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess, state.brandingPlannedAccess, state.tlTrackerAccess);
+    saveSession(username, state.agentName, state.agentCode, state.blastAccess, state.societyAccess, state.leaderboardAccess, state.slotCheckerAccess, state.brandingAccess, state.paymentsAccess, state.brandingPlannedAccess, state.tlTrackerAccess, state.attendanceAccess);
     if (needsOnboarding) {
-      // Ref-code list for the duplicate warning now comes from the server response.
-      state._allRefCodes = Array.isArray(data.allRefCodes) ? data.allRefCodes : [];
+      // Cache duplicates list for warning before they pick a code.
+      state._allRefCodes = rows.slice(headerIdx + 1)
+        .map(r => refCodeIdx >= 0 ? String(r[refCodeIdx] || '').trim().toLowerCase() : '')
+        .filter(c => c !== '');
       showOnboardingScreen();
     } else {
       onLoggedIn();
     }
   } catch(e) {
-    showError('loginError', 'Could not reach server. Check your internet connection.');
+    if (e.message === 'SHEET_ACCESS_DENIED') {
+      showError('loginError', 'Login sheet is not accessible. Please contact your admin to share the credentials sheet.');
+    } else {
+      showError('loginError', 'Could not reach server. Check your internet connection.');
+    }
     btn.disabled = false; btn.textContent = 'Sign in';
   }
 }
@@ -3319,7 +3401,7 @@ function onLoggedIn() {
 
 function logout() {
   clearSession();
-  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, targetsAll:[], incView:'weekday', lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', brandingLat:null, brandingLon:null, brandingMedia:null, cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{}, tlTrackerAccess:false, tlData:[], tlWeeks:[], tlMonth:null, tlPeriod:'', tlMe:null };
+  state = { agentName:'', agentCode:'', username:'', blastAccess:false, societyAccess:false, leaderboardAccess:false, slotCheckerAccess:false, onboarded:false, displayName:'', referralCode:'', userLat:null, userLon:null, database:[], dbLoaded:false, allSocieties:[], selectedSociety:null, blastSociety:'', blastSocietyNM:'', screenHistory:[], nmTab:'live', performanceData:[], incentiveSlabsAll:[], topBonusAll:[], campaignInfo:null, targetsAll:[], incView:'weekday', lbView:'national', lbPeriod:'today', userCity:'', slotData:[], slotDataLoaded:false, selectedSlotHood:null, perfPeriod:'today', dailyData:[], dailyDataLoaded:false, inventoryUpdateAccess:false, inventoryDashboardAccess:false, inventoryRole:'', assignedCity:'', assignedCities:[], productCatalog:[], productCatalogLoaded:false, inventoryStock:[], inventoryStockLoaded:false, invDetailRecord:null, invEditingRecordId:null, inventoryStaff:[], inventoryStaffLoaded:false, inventoryRequests:[], inventoryRequestsLoaded:false, reqReqTab:'new', reqRevTab:'pending', reqRevTopTab:'stock', repRevTab:'pending', inventoryRepairs:[], inventoryRepairsLoaded:false, repairPhotoData:null, brandingAccess:false, brandingPlannedAccess:false, brandingType:'', brandingSubmissionType:'', brandingLat:null, brandingLon:null, brandingMedia:null, cityMmNmData:[], cityMmNmLoaded:false, paymentsAccess:[], paymentsConfig:null, paymentsConfigLoaded:false, paymentsSubFeature:'', societyMaster:{}, societyMasterLoaded:{}, paymentsFiles:{}, tlTrackerAccess:false, tlData:[], tlWeeks:[], tlMonth:null, tlPeriod:'', tlMe:null, attendanceAccess:false, attendanceCities:[], attendanceCitiesLoaded:false };
   document.getElementById('agentBadge').style.display = 'none';
   showScreen('screen-login');
 }
@@ -3343,6 +3425,7 @@ function renderHomeCards() {
     // PERFORMANCE
     { group:'Performance', icon:'ti-trophy',            title:'My performance',  sub:'Rank & incentive earned',              access: state.leaderboardAccess, action:'openPerformance()' },
     { group:'Performance', icon:'ti-target-arrow',      title:'TL Tracker',      sub:'Weekly target & incentive',            access: state.tlTrackerAccess,   action:'openTLTracker()' },
+    { group:'Performance', icon:'ti-calendar-check',    title:'Team Attendance', sub:'City-wise daily attendance',           access: state.attendanceAccess,  action:'openAttendance()' },
     { group:'Performance', icon:'ti-activity',          title:'Slot checker',    sub:'Live jobs & utilization',              access: state.slotCheckerAccess, action:'startSlotChecker()' },
     // INVENTORY
     { group:'Inventory',   icon:'ti-chart-bar',         title:'Dashboard',       sub:'Stock across cities',                  access: state.inventoryDashboardAccess, action:'openInventoryDashboard()' },
@@ -3402,21 +3485,12 @@ async function doChangePassword() {
   if (newPw !== confirmPw) { showError('cpError', 'New passwords do not match.'); return; }
   btn.disabled = true; btn.textContent = 'Updating…';
   try {
-    // company-migration (batch 2): the credentials sheet is now private in the
-    // Shared Drive, so we can't read it as CSV to check the old password. Verify
-    // the current username+password via the server `login` endpoint instead
-    // (same check the login screen uses), then post the change.
-    const verifyRes = await fetch(CONFIG.APPS_SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'login', username: username, password: oldPw })
-    });
-    const verify = await verifyRes.json();
-    if (!verify || verify.ok !== true) {
-      showError('cpError', 'Username or current password is incorrect.');
-      btn.disabled = false; btn.textContent = 'Update Password';
-      return;
-    }
+    const { rows, headerIdx, uIdx, pIdx, aIdx } = await loadCreds();
+    const match = rows.slice(headerIdx + 1).find(r =>
+      String(r[uIdx]||'').toLowerCase().trim() === username.toLowerCase() &&
+      String(r[pIdx]||'').trim() === oldPw && toBoolean(r[aIdx])
+    );
+    if (!match) { showError('cpError', 'Username or current password is incorrect.'); btn.disabled = false; btn.textContent = 'Update Password'; return; }
     await postToScript({ action: 'changePassword', username, newPassword: newPw, sheetId: CONFIG.CREDS_SHEET_ID });
     const suc = document.getElementById('cpSuccess');
     suc.textContent = 'Password updated! Please login with your new password.';
@@ -3435,8 +3509,11 @@ async function doChangePassword() {
 // ─────────────────────────────────────────────────────────
 async function loadDatabase() {
   if (state.dbLoaded) return;
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.DB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Clean+Residential+DB`;
   try {
-    const rows = await fetchSheetData('db');
+    const res  = await fetch(url);
+    const text = await res.text();
+    const rows = parseCSV(text);
 
     // Find header row — look for 'name' and 'latitude' columns
     const headerIdx = rows.findIndex(r =>
@@ -3693,8 +3770,10 @@ function showNewForm() {
 
 async function checkIfAlreadySubmitted(societyName) {
   try {
-    // company-migration (batch 2): read the Submission sheet server-side.
-    const rows = await fetchSheetData('submission');
+    const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.SUBMIT_SHEET_ID}/export?format=csv&gid=0`;
+    const res  = await fetch(url);
+    const text = await res.text();
+    const rows = parseCSV(text);
     const headerIdx = rows.findIndex(r => r.some(c => c.toLowerCase().includes('society')));
     if (headerIdx === -1) return false;
     const h      = rows[headerIdx].map(c => c.toLowerCase().trim());
@@ -3989,7 +4068,13 @@ async function submitOnboarding() {
 
 // Fetch the BDE Performance sheet (Agent code | Name | Ref Code | Recharges | Last Updated | City).
 async function loadPerformance() {
-  const rows = await fetchSheetData('performance');
+  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/export?format=csv&gid=0`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('PERFORMANCE_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
   const headerIdx = rows.findIndex(r => r.some(c => c.toLowerCase().includes('agent code') || c.toLowerCase().includes('agent_code')));
   if (headerIdx === -1) throw new Error('Performance header not found');
   const h = rows[headerIdx].map(c => c.toLowerCase().trim());
@@ -4086,7 +4171,13 @@ function excelSerialToDate(serial) {
 
 async function loadDailyPerformance() {
   if (state.dailyDataLoaded) return;
-  const rows = await fetchSheetData('daily_perf');
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=BDE_Daily_Performance`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('DAILY_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
   // Header row contains 'dt' and 'ref_code'.
   const headerIdx = rows.findIndex(r =>
     r.some(c => c.toLowerCase().trim() === 'dt') &&
@@ -4275,16 +4366,20 @@ function leaderboardDataForPeriod(period) {
 // Rows with City=ALL are defaults; specific cities override.
 // ─────────────────────────────────────────────────────────
 async function loadIncentiveConfig() {
-  // batch2 — each tab read server-side via getSheetData (key=incentive&tab=…).
-  // Active/Slabs/Bonus are required; Target is optional (defensive .catch to []).
-  const [activeRows, slabRows, bonusRows, targetRows] = await Promise.all([
-    fetchSheetData('incentive', 'Active').catch(() => { throw new Error('INCENTIVE_SHEET_ACCESS_DENIED'); }),
-    fetchSheetData('incentive', 'Slabs').catch(()  => { throw new Error('INCENTIVE_SHEET_ACCESS_DENIED'); }),
-    fetchSheetData('incentive', 'Bonus').catch(()  => { throw new Error('INCENTIVE_SHEET_ACCESS_DENIED'); }),
-    fetchSheetData('incentive', 'Target').catch(() => []),  // v6.5 — optional tab
+  const base = `https://docs.google.com/spreadsheets/d/${CONFIG.INCENTIVE_CONFIG_SHEET_ID}/gviz/tq?tqx=out:csv`;
+  const [activeText, slabsText, bonusText, targetText] = await Promise.all([
+    fetch(base + '&sheet=Active').then(r => r.text()),
+    fetch(base + '&sheet=Slabs').then(r => r.text()),
+    fetch(base + '&sheet=Bonus').then(r => r.text()),
+    fetch(base + '&sheet=Target').then(r => r.text()).catch(() => ''),  // v6.5 — optional tab
   ]);
+  // Only the three core tabs gate the "sheet not shared" error. The Target tab
+  // is optional — a missing/empty/erroring Target tab must NOT break this load.
+  const anyHtml = [activeText, slabsText, bonusText].some(t => t.trim().startsWith('<!DOCTYPE') || t.trim().startsWith('<html'));
+  if (anyHtml) throw new Error('INCENTIVE_SHEET_ACCESS_DENIED');
 
   // Active tab — key/value pairs in two columns.
+  const activeRows = parseCSV(activeText);
   const info = { name: '', start: '', end: '', announcement: '' };
   activeRows.forEach(r => {
     const k = String(r[0] || '').toLowerCase().trim();
@@ -4302,6 +4397,7 @@ async function loadIncentiveConfig() {
   //   Incentive: payout AT the band's Min count
   //   Per Extra: Rs. added per recharge above Min (blank/0 = flat band)
   // payout(count) = Incentive + (Per Extra) * (count - Min)
+  const slabRows = parseCSV(slabsText);
   const slabHeaderIdx = slabRows.findIndex(r => r.some(c => {
     const s = String(c).toLowerCase();
     return s.includes('min') || s.includes('incentive');
@@ -4330,6 +4426,7 @@ async function loadIncentiveConfig() {
     .filter(s => !isNaN(s.min));
 
   // Bonus tab — City | Rank | Bonus
+  const bonusRows = parseCSV(bonusText);
   const bonusHeaderIdx = bonusRows.findIndex(r => r.some(c => c.toLowerCase().includes('rank')));
   const bonusHeader = bonusHeaderIdx >= 0 ? bonusRows[bonusHeaderIdx].map(c => c.toLowerCase().trim()) : [];
   const bCityIdx = bonusHeader.findIndex(c => c === 'city');
@@ -4353,7 +4450,7 @@ async function loadIncentiveConfig() {
   // Optional and fully defensive: any failure leaves state.targetsAll = [].
   state.targetsAll = [];
   try {
-    const tRows = targetRows || [];
+    const tRows = parseCSV(targetText || '');
     const tHeaderIdx = tRows.findIndex(r => r.some(c => {
       const s = String(c).toLowerCase();
       return s.includes('weekday') || s.includes('weekend');
@@ -5019,7 +5116,13 @@ function _tlNormName(v) {
 
 // Always re-fetches (the tracker is "live"); no session cache.
 async function loadTLTracker() {
-  const rows = await fetchSheetData('tl_incentive');
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.PERFORMANCE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(CONFIG.TL_TRACKER_TAB)}`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('TL_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
 
   // Main-table header row: has a 'tl name' cell AND a 'w1 …' cell.
   let hIdx = rows.findIndex(r =>
@@ -5316,7 +5419,13 @@ function renderTLTracker() {
 
 async function loadSlotData() {
   if (state.slotDataLoaded) return;
-  const rows = await fetchSheetData('slot_checker');
+  const url  = `https://docs.google.com/spreadsheets/d/${CONFIG.SLOT_CHECKER_SHEET_ID}/export?format=csv&gid=0`;
+  const res  = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('SLOT_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
 
   // Header row contains 'hood' — find it. Some headers have line breaks
   // (e.g. "Today total\nJobs"), so we normalise whitespace before matching.
@@ -5456,6 +5565,176 @@ document.addEventListener('click', e => {
 
 
 // ─────────────────────────────────────────────────────────
+// TEAM ATTENDANCE — city-wise daily attendance for TL/Manager.
+// Reads the payroll sheet server-side (getAttendanceCities / getCityAttendance).
+// Dates are whatever the sheet currently holds — nothing is hardcoded, so the
+// monthly in-place date change on the sheet needs no code change here.
+// ─────────────────────────────────────────────────────────
+async function _fetchAttendance(action, params) {
+  let url = CONFIG.APPS_SCRIPT_URL + '?action=' + encodeURIComponent(action) + '&_ts=' + Date.now();
+  if (params) for (const k in params) url += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+  const res = await fetch(url, { method: 'GET' });
+  if (!res.ok) throw new Error('APPS_SCRIPT_HTTP_' + res.status);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) throw new Error('APPS_SCRIPT_ACCESS_DENIED');
+  const data = JSON.parse(text);
+  if (!data || data.ok !== true) throw new Error(data && data.error ? data.error : 'APPS_SCRIPT_NOT_OK');
+  return data;
+}
+
+function _attErr(e) {
+  const m = (e && e.message) ? e.message : '';
+  if (m.includes('ACCESS_DENIED'))     return 'Attendance sheet is not accessible. Please contact admin.';
+  if (m.includes('HEADERS_NOT_FOUND')) return 'Could not read the attendance layout. Please contact admin.';
+  if (m.includes('LOCATION_HEADER'))   return 'The attendance sheet has no Location column. Please contact admin.';
+  return 'Could not load attendance. Check your internet and try again.';
+}
+
+// Map a raw cell to a colour class + short label. Blank = not marked (neutral),
+// only a literal "A" is shown as Absent so future/empty days aren't painted red.
+function _attStatusMeta(raw) {
+  const s = String(raw || '').trim().toUpperCase();
+  if (s === 'P')  return { cls:'att-p',     txt:'P',  key:'P'  };
+  if (s === 'A')  return { cls:'att-a',     txt:'A',  key:'A'  };
+  if (s === 'L')  return { cls:'att-l',     txt:'L',  key:'L'  };
+  if (s === 'H')  return { cls:'att-h',     txt:'H',  key:'H'  };
+  if (s === 'HD' || s === 'D') return { cls:'att-hd', txt:'½', key:'HD' };
+  if (s === '')   return { cls:'att-blank', txt:'',   key:''   };
+  return { cls:'att-x', txt: raw, key:'?' };
+}
+
+// Cities this user may see. Empty array means "all" (central / ALL).
+function _attAllowedCities() {
+  if (_invIsCentral()) return [];
+  return (state.assignedCities || []).filter(c => c && String(c).toUpperCase() !== 'ALL');
+}
+
+async function openAttendance() {
+  navigate('screen-attendance');
+  hideMsg('attError');
+  document.getElementById('attGridWrap').innerHTML = '';
+  document.getElementById('attSummary').style.display = 'none';
+
+  const fixed = document.getElementById('attCityFixed');
+  const wrap  = document.getElementById('attCityWrap');
+  const sel   = document.getElementById('attCitySelect');
+  fixed.style.display = 'none';
+  wrap.style.display  = 'none';
+
+  const isCentral = _invIsCentral();
+  const allowed   = _attAllowedCities();
+
+  // Scoped to exactly one city -> no dropdown; show a fixed label and load it.
+  if (!isCentral && allowed.length === 1) {
+    fixed.style.display = 'inline-flex';
+    fixed.innerHTML = `<i class="ti ti-map-pin"></i> ${_escHtml(allowed[0])}`;
+    _loadAttendanceForCity(allowed[0]);
+    return;
+  }
+
+  // No city assigned and not central -> nothing to show.
+  if (!isCentral && allowed.length === 0) {
+    showError('attError', 'No city is assigned to your account for attendance. Please contact your admin.');
+    return;
+  }
+
+  // Central OR multiple assigned cities -> show a picker limited to the allowed
+  // set. Central sees the full list pulled from the sheet.
+  wrap.style.display = 'block';
+  let cities = allowed;
+  if (isCentral) {
+    if (!state.attendanceCitiesLoaded) {
+      sel.innerHTML = _phOption('Loading cities…'); sel.disabled = true;
+      try {
+        const data = await _fetchAttendance('getAttendanceCities');
+        state.attendanceCities = data.cities || [];
+        state.attendanceCitiesLoaded = true;
+      } catch (e) {
+        sel.innerHTML = _phOption('Select city…'); sel.disabled = false;
+        showError('attError', _attErr(e));
+        return;
+      }
+    }
+    cities = state.attendanceCities;
+  }
+  sel.innerHTML = _phOption('Select city…') +
+    cities.map(c => `<option value="${_escHtml(c)}">${_escHtml(c)}</option>`).join('');
+  sel.disabled = cities.length === 0;
+}
+
+async function onAttendanceCityChange() {
+  _loadAttendanceForCity(document.getElementById('attCitySelect').value.trim());
+}
+
+async function _loadAttendanceForCity(city) {
+  const wrap    = document.getElementById('attGridWrap');
+  const summary = document.getElementById('attSummary');
+  hideMsg('attError');
+  summary.style.display = 'none';
+  wrap.innerHTML = '';
+  if (!city) return;
+
+  wrap.innerHTML = '<div class="loading"><div class="spinner"></div> Loading attendance…</div>';
+  try {
+    const data = await _fetchAttendance('getCityAttendance', { city });
+    renderAttendanceGrid(data);
+  } catch (e) {
+    wrap.innerHTML = '';
+    showError('attError', _attErr(e));
+  }
+}
+
+function renderAttendanceGrid(data) {
+  const wrap    = document.getElementById('attGridWrap');
+  const summary = document.getElementById('attSummary');
+  const dates   = data.dates || [];
+  const emps    = data.employees || [];
+
+  if (emps.length === 0) {
+    wrap.innerHTML = `<div class="info-box">No employees found for ${_escHtml(data.city)} in this cycle.</div>`;
+    summary.style.display = 'none';
+    return;
+  }
+
+  let head = '<th class="att-name-col">Employee</th>';
+  head += dates.map(d => `<th>${_escHtml(d)}</th>`).join('');
+  head += '<th class="att-tot">P</th><th class="att-tot">A</th>';
+
+  const body = emps.map(e => {
+    let p = 0, a = 0;
+    const cells = (e.statuses || []).map(st => {
+      const m = _attStatusMeta(st);
+      if (m.key === 'P') p++;
+      if (m.key === 'A') a++;
+      return `<td class="att-cell ${m.cls}">${_escHtml(m.txt)}</td>`;
+    }).join('');
+    const mm = e.micro_market ? `<span class="att-mm">${_escHtml(e.micro_market)}</span>` : '';
+    return `<tr>
+      <td class="att-name-col">${_escHtml(e.name)}${mm}</td>
+      ${cells}
+      <td class="att-tot att-tot-p">${p}</td>
+      <td class="att-tot att-tot-a">${a}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML =
+    `<div class="att-scroll"><table class="att-table">` +
+    `<thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+
+  summary.innerHTML =
+    `<b>${emps.length}</b> employees · <b>${dates.length}</b> days in this cycle` +
+    `<span class="att-legend">` +
+    `<span class="att-lg att-p">P</span>Present` +
+    `<span class="att-lg att-a">A</span>Absent` +
+    `<span class="att-lg att-l">L</span>Leave` +
+    `<span class="att-lg att-h">H</span>Holiday` +
+    `<span class="att-lg att-hd">½</span>Half day` +
+    `</span>`;
+  summary.style.display = 'block';
+}
+
+
+// ─────────────────────────────────────────────────────────
 // AUTO LOGIN
 // ─────────────────────────────────────────────────────────
 window.addEventListener('load', () => {
@@ -5471,6 +5750,7 @@ window.addEventListener('load', () => {
     state.brandingPlannedAccess = session.brandingPlannedAccess || false;  // v6.4
     state.paymentsAccess    = Array.isArray(session.paymentsAccess) ? session.paymentsAccess : [];
     state.tlTrackerAccess   = session.tlTrackerAccess   || false;  // v6.7
+    state.attendanceAccess  = session.attendanceAccess  || false;  // Team Attendance
     // v6.9 - restore inventory access + scope (fixes vanished inventory home cards on refresh)
     state.inventoryUpdateAccess    = session.inventoryUpdateAccess    || false;
     state.inventoryDashboardAccess = session.inventoryDashboardAccess || false;
@@ -5612,7 +5892,13 @@ async function loadProductCatalog() {
     state.productCatalogLoaded = true;
     return;
   }
-  const rows = await fetchSheetData('product_catalog');
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.PRODUCT_CATALOG_SHEET_ID}/export?format=csv&gid=0`;
+  const res = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('PRODUCT_CATALOG_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
   const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('product_id') || String(c).toLowerCase().includes('product id')));
   if (headerIdx === -1) {
     // Empty / unconfigured catalog — fall back to a small starter list so the form is still usable.
@@ -5649,9 +5935,15 @@ async function loadInventoryStock(force) {
     state.inventoryStockLoaded = true;
     return;
   }
-  // Fetch the "Inventory_Stock" tab server-side. The spreadsheet also has
+  // Fetch the "Inventory_Stock" tab by name via gviz. The spreadsheet also has
   // an "Inventory_Stock_Audit" tab; we only want the main tab here.
-  const rows = await fetchSheetData('inventory', 'Inventory_Stock');
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.INVENTORY_STOCK_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Inventory_Stock`;
+  const res = await fetch(url);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('INVENTORY_STOCK_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
   const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('record_id') || String(c).toLowerCase().includes('record id')));
   if (headerIdx === -1) {
     // Empty sheet (no header yet) — treat as empty inventory. First write will create the header.
@@ -6098,21 +6390,25 @@ function editFromDetail() {
 async function loadInventoryStaff() {
   if (state.inventoryStaffLoaded) return;
   try {
-    // company-migration (batch 2): the credentials sheet is now private, so we
-    // fetch the TL/Manager directory from the server's getStaffDirectory endpoint
-    // (returns only name/code/role/city for manager|tl users — never passwords).
-    const data = await checkAppsScriptAction('getStaffDirectory');
-    const staff = Array.isArray(data.staff) ? data.staff : [];
-    state.inventoryStaff = staff
-      .map(s => {
-        const role = String(s.role || '').trim().toLowerCase();
-        const rawCity = String(s.city || '').trim();
+    const { rows, headerIdx, nIdx, cIdx, aIdx, invRoleIdx, assignedCityIdx } = await loadCreds();
+    if (invRoleIdx < 0) {
+      // Inventory Role column not present yet — fall back to empty list; the form will
+      // accept whatever name is preselected (logged-in user) without a real dropdown.
+      state.inventoryStaff = [];
+      state.inventoryStaffLoaded = true;
+      return;
+    }
+    state.inventoryStaff = rows.slice(headerIdx + 1)
+      .filter(r => toBoolean(r[aIdx]))  // active users only
+      .map(r => {
+        const role = String(r[invRoleIdx] || '').trim().toLowerCase();
+        const rawCity = assignedCityIdx >= 0 ? String(r[assignedCityIdx] || '').trim() : '';
         return {
-          name:   String(s.name || '').trim(),
-          code:   String(s.code || '').trim(),
-          role:   role,
-          city:   rawCity,                              // raw cell, kept for display
-          cities: _parseAssignedCities(rawCity, role),  // parsed list for matching
+          name: String(r[nIdx] || '').trim(),
+          code: String(r[cIdx] || '').trim(),
+          role: role,
+          city: rawCity,                                  // raw cell, kept for display
+          cities: _parseAssignedCities(rawCity, role),    // parsed list for matching
         };
       })
       .filter(s => s.name && (s.role === 'manager' || s.role === 'tl'));
@@ -6488,10 +6784,17 @@ async function loadInventoryRequests(force) {
     state.inventoryRequestsLoaded = true;
     return;
   }
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.INVENTORY_STOCK_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Inventory_Requirements`;
   try {
-    // Missing tab → getSheetData returns TAB_NOT_FOUND → fetchSheetData throws →
-    // caught below and treated as empty (same as the old HTML-response check).
-    const rows = await fetchSheetData('inventory', 'Inventory_Requirements');
+    const res = await fetch(url);
+    const text = await res.text();
+    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+      // Tab doesn't exist yet — treat as empty until first write creates it.
+      state.inventoryRequests = [];
+      state.inventoryRequestsLoaded = true;
+      return;
+    }
+    const rows = parseCSV(text);
     const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('request_id') || String(c).toLowerCase().includes('request id')));
     if (headerIdx === -1) {
       state.inventoryRequests = [];
@@ -6890,9 +7193,17 @@ async function loadInventoryRepairs(force) {
     state.inventoryRepairsLoaded = true;
     return;
   }
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.INVENTORY_STOCK_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Inventory_Repairs`;
   try {
-    // Missing tab → TAB_NOT_FOUND → fetchSheetData throws → caught below = empty.
-    const rows = await fetchSheetData('inventory', 'Inventory_Repairs');
+    const res = await fetch(url);
+    const text = await res.text();
+    if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+      // Tab doesn't exist yet — treat as empty so the UI still works.
+      state.inventoryRepairs = [];
+      state.inventoryRepairsLoaded = true;
+      return;
+    }
+    const rows = parseCSV(text);
     const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().includes('repair_id')));
     if (headerIdx === -1) {
       state.inventoryRepairs = [];
@@ -8111,7 +8422,14 @@ async function loadPaymentsConfig() {
 }
 
 async function loadPaymentsConfigFromSheet() {
-  const rows = await fetchSheetData('payments_config', 'Payments_Config');
+  const url = `https://docs.google.com/spreadsheets/d/${CONFIG.PAYMENTS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Payments_Config`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('PAYMENTS_CONFIG_SHEET_HTTP_' + res.status);
+  const text = await res.text();
+  if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+    throw new Error('PAYMENTS_CONFIG_SHEET_ACCESS_DENIED');
+  }
+  const rows = parseCSV(text);
   const headerIdx = rows.findIndex(r => r.some(c => String(c).toLowerCase().trim() === 'sub_feature_code'));
   if (headerIdx === -1) throw new Error('PAYMENTS_CONFIG_HEADER_NOT_FOUND');
   const h = rows[headerIdx].map(c => String(c).toLowerCase().trim());
@@ -8445,11 +8763,14 @@ async function _loadSocietiesForCity(cityLower) {
   const candidates = _cityTabCandidates(cityLower);
   let data = [];
   for (let ci = 0; ci < candidates.length; ci++) {
+    const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SOCIETY_MASTER_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(candidates[ci])}`;
     try {
-      const parsed = await fetchSheetData('society_master', candidates[ci]);
-      const extracted = _extractMasterRows(parsed);
+      const res = await fetch(url);
+      const txt = await res.text();
+      if (txt.trim().startsWith('<!DOCTYPE') || txt.trim().startsWith('<html')) continue;
+      const extracted = _extractMasterRows(parseCSV(txt));
       if (extracted.length) { data = extracted; break; }
-    } catch (e) { /* tab not found for this casing → try next */ }
+    } catch (e) { /* try next casing */ }
   }
   state.societyMaster[cityLower] = data;
   state.societyMasterLoaded[cityLower] = true;
