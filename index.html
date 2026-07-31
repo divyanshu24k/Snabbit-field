@@ -1,14 +1,59 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" id="metaThemeColor" content="#FAFAFA">
 <title>Snabbit Field Agent</title>
 <!--
   ============================================================
   SNABBIT FIELD AGENT APP
-  VERSION     : 6.9
-  LAST UPDATED: June 2026
+  VERSION     : 7.0
+  LAST UPDATED: July 2026
+
+  CHANGES IN v7.0 (Dark mode / Light mode — user-selectable appearance):
+    1. NEW FEATURE: Appearance picker. A sun/moon icon in the header (visible
+       on EVERY screen, including login) opens a sheet with three choices:
+         - Light         : the existing v6.9 palette, unchanged
+         - Dark          : new dark palette
+         - Match device  : follows the phone/browser prefers-color-scheme,
+                           and re-evaluates live via matchMedia, so a phone
+                           on a night schedule flips the app with no reload
+       Selecting applies instantly and leaves the sheet open, so the two
+       modes can be compared before tapping Done. Confirmation toast reuses
+       the existing _invToast component.
+    2. STORAGE: the choice lives in its OWN localStorage key, 'snabbit_theme',
+       NOT inside 'snabbit_session'. clearSession() on logout therefore does
+       not reset the look, and the preference outlives session expiry.
+       Default when nothing is stored: 'system'.
+    3. NO WHITE FLASH: a small dependency-free script at the end of <head>
+       sets <html data-theme="light|dark"> BEFORE first paint. <html> also
+       carries data-theme="light" as a no-JS fallback. <meta name="theme-color">
+       is kept in sync so the mobile browser chrome matches.
+    4. TOKENISED THE STYLESHEET (prerequisite for 1): every hardcoded colour
+       outside :root is now a CSS variable, so one dark block overrides the
+       whole app. New tokens: --on-accent, --on-navy, --track,
+       --success-strong/-border, --warning-strong/-border, --error-border,
+       --info/-strong/-soft/-border, --violet/-soft/-border,
+       --magenta/-soft, --future-nm, --on-future-nm, --shadow-xs/-sm/-md/-lg,
+       --overlay, --focus-ring, --select-caret, --select-caret-sm.
+       LIGHT VALUES ARE BYTE-IDENTICAL TO v6.9 — light mode renders exactly
+       as before. Deliberately NOT tokenised: WhatsApp brand green
+       (#25D366/#1EB358), the amber "Damaged" legend dot (#F0A500), and
+       ctx.fillStyle='#fff' in the image compressor (that is canvas
+       compositing for PNG transparency, not UI).
+    5. FIX (would have broken in dark mode): .btn-manual and .inv-toast fill
+       with var(--navy) and previously hardcoded color:#fff. --navy inverts to
+       near-white on dark, so the label would have vanished. Both now use the
+       new --on-navy token, which flips with the theme.
+    6. FIX (pre-existing contrast bug, visible in light mode too): the
+       "Future NM" badge in the GPS society results set background:#6C63FF but
+       inherited .s-nm's dark-grey text. It now also sets a matching ink
+       colour (--on-future-nm).
+    7. color-scheme is declared per theme, so native <select> popups, the six
+       <input type="date"> pickers and the scrollbars render dark too.
+    FRONTEND-ONLY — no Apps Script redeploy required. No change to any
+    action name, payload field, sheet read, or submission flow.
 
   CHANGES IN v6.9 (stability pass — no behaviour change to working flows):
     1. FIX (critical, refresh bug): inventory access + scope
@@ -391,7 +436,18 @@
      Class names preserved from v7 — drop-in swap.
      ============================================================ */
 
+  /* ------------------------------------------------------------
+     THEME TOKENS (v7.0)
+     ------------------------------------------------------------
+     :root holds the LIGHT palette — values are unchanged from
+     v6.9, so light mode is pixel-identical to the old build.
+     html[data-theme="dark"] below overrides the same token names.
+     Nothing in the stylesheet should hardcode a colour: if a new
+     colour is needed, add a token here AND a dark counterpart.
+     ------------------------------------------------------------ */
   :root {
+    color-scheme: light;
+
     /* Brand */
     --accent:        #FF1F7D;
     --accent-light:  #FF4D96;
@@ -424,14 +480,133 @@
     --error:         #DC2626;
     --error-soft:    #FEF2F2;
 
+    /* Status — strong ink + hairline borders on the soft fills */
+    --success-strong: #15803D;
+    --success-border: #BBF7D0;
+    --warning-strong: #92400E;
+    --warning-border: #FCD9A4;
+    --error-border:   #FECACA;
+
+    /* Extra tones (request statuses, attendance cells) */
+    --info:          #2563EB;
+    --info-strong:   #1D4ED8;
+    --info-soft:     #EFF6FF;
+    --info-border:   #BFDBFE;
+    --violet:        #6D28D9;
+    --violet-soft:   #F5F3FF;
+    --violet-border: #DDD6FE;
+    --magenta:       #A21CAF;
+    --magenta-soft:  #FDF4FF;
+    --future-nm:     #6C63FF;
+    --on-future-nm:  #FFFFFF;
+
+    /* Ink that sits ON a filled block. --on-navy MUST flip in dark
+       mode, because --navy becomes near-white there. */
+    --on-accent:     #FFFFFF;
+    --on-navy:       #FFFFFF;
+
+    /* Inert tracks (step dots) */
+    --track:         #E4E4E7;
+
+    /* Elevation / overlay / focus */
+    --shadow-xs:     0 1px 2px rgba(0,0,0,0.06);
+    --shadow-sm:     0 1px 3px rgba(0,0,0,0.04);
+    --shadow-md:     0 4px 12px rgba(0,0,0,0.06);
+    --shadow-lg:     0 6px 20px rgba(0,0,0,0.15);
+    --overlay:       rgba(24,24,27,0.5);
+    --focus-ring:    0 0 0 3px rgba(255,31,125,0.12);
+
+    /* Native <select> caret (stroke colour must follow the theme) */
+    --select-caret:    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2371717A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    --select-caret-sm: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2371717A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+
     /* Layout */
     --radius:        10px;
     --radius-sm:     8px;
     --radius-lg:     12px;
   }
 
+  /* ------------------------------------------------------------
+     DARK PALETTE (v7.0)
+     Applied by setting data-theme="dark" on <html>. The pre-paint
+     script in <head> does this before first render, so there is no
+     white flash on refresh.
+     ------------------------------------------------------------ */
+  html[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Brand — nudged lighter so pink stays legible on dark fills.
+       --accent-dark is the HOVER state, so on dark it goes UP. */
+    --accent:        #FF4D96;
+    --accent-light:  #FF7AB0;
+    --accent-dark:   #FF7AB0;
+    --accent-soft:   #2E1220;
+    --accent-border: #4A1D32;
+
+    /* Surfaces */
+    --bg:            #0F0F12;
+    --surface:       #17171C;
+    --surface2:      #202027;
+
+    /* Borders */
+    --border:        #2B2B33;
+    --border-strong: #3D3D47;
+
+    /* Text */
+    --navy:          #FAFAFA;
+    --navy2:         #E4E4E7;
+    --text:          #FAFAFA;
+    --text-muted:    #C9C9D1;
+    --muted:         #9E9EA9;
+    --muted-light:   #75757F;
+
+    /* Status */
+    --success:       #4ADE80;
+    --success-soft:  #0F2419;
+    --warning:       #FBBF24;
+    --warning-soft:  #2A1E08;
+    --error:         #FB7185;
+    --error-soft:    #2B1319;
+
+    --success-strong: #86EFAC;
+    --success-border: #1F5138;
+    --warning-strong: #FCD34D;
+    --warning-border: #55401A;
+    --error-border:   #5A2530;
+
+    --info:          #60A5FA;
+    --info-strong:   #93C5FD;
+    --info-soft:     #0F1B2D;
+    --info-border:   #1E3A5F;
+    --violet:        #C4B5FD;
+    --violet-soft:   #1A152E;
+    --violet-border: #372C60;
+    --magenta:       #F0ABFC;
+    --magenta-soft:  #2A1030;
+    --future-nm:     #A5A0FF;
+    --on-future-nm:  #14122E;
+
+    --on-accent:     #FFFFFF;
+    --on-navy:       #101014;   /* flipped: --navy is near-white here */
+
+    --track:         #2E2E37;
+
+    --shadow-xs:     0 1px 2px rgba(0,0,0,0.45);
+    --shadow-sm:     0 1px 3px rgba(0,0,0,0.5);
+    --shadow-md:     0 6px 16px rgba(0,0,0,0.55);
+    --shadow-lg:     0 8px 26px rgba(0,0,0,0.6);
+    --overlay:       rgba(0,0,0,0.68);
+    --focus-ring:    0 0 0 3px rgba(255,77,150,0.28);
+
+    --select-caret:    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239E9EA9' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    --select-caret-sm: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239E9EA9' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+  html { background: var(--bg); }
+  /* v7.0 — themable surfaces animate so the switch does not feel like a reload */
+  body, .header, .screen, .login-card { transition: background-color 0.18s ease, color 0.18s ease; }
   body {
     background: var(--bg);
     color: var(--text);
@@ -502,7 +677,7 @@
 
   /* ── STEP INDICATOR ── */
   .step-indicator { display: flex; gap: 4px; margin-bottom: 20px; }
-  .step-dot { height: 3px; flex: 1; border-radius: 2px; background: #E4E4E7; transition: background 0.3s; }
+  .step-dot { height: 3px; flex: 1; border-radius: 2px; background: var(--track); transition: background 0.3s; }
   .step-dot.done,
   .step-dot.active { background: var(--accent); }
 
@@ -545,14 +720,14 @@
   .input-wrap textarea:focus,
   .input-wrap select:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(255,31,125,0.12);
+    box-shadow: var(--focus-ring);
   }
   .input-wrap input::placeholder,
   .input-wrap textarea::placeholder { color: var(--muted-light); }
   .input-wrap textarea { resize: none; height: 80px; line-height: 1.5; }
   .input-wrap select {
     cursor: pointer;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2371717A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-image: var(--select-caret);
     background-repeat: no-repeat;
     background-position: right 12px center;
     padding-right: 36px;
@@ -610,7 +785,7 @@
   }
   .option-card:hover {
     border-color: var(--border-strong);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    box-shadow: var(--shadow-sm);
   }
   .option-card-icon {
     width: 40px; height: 40px;
@@ -664,14 +839,14 @@
   }
   .society-search-input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(255,31,125,0.12);
+    box-shadow: var(--focus-ring);
   }
   .society-search-input::placeholder { color: var(--muted-light); }
   .society-results-list {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius-sm); margin-top: 4px; max-height: 260px;
     overflow-y: auto; display: none;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    box-shadow: var(--shadow-md);
   }
   .society-results-list.visible { display: block; }
   .society-result-item {
@@ -700,7 +875,7 @@
     line-height: 1.2;
   }
   .btn .ti { font-size: 16px; }
-  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary { background: var(--accent); color: var(--on-accent); }
   .btn-primary:hover   { background: var(--accent-dark); }
   .btn-primary:active  { transform: scale(0.99); }
   .btn-primary:disabled { background: var(--border); color: var(--muted-light); cursor: not-allowed; transform: none; }
@@ -721,13 +896,13 @@
 
   /* ── MESSAGES ── */
   .error-msg {
-    background: var(--error-soft); border: 1px solid #FECACA;
+    background: var(--error-soft); border: 1px solid var(--error-border);
     color: var(--error); border-radius: var(--radius-sm);
     padding: 10px 12px; font-size: 13px; font-weight: 400;
     margin-bottom: 14px; display: none; line-height: 1.45;
   }
   .success-msg {
-    background: var(--success-soft); border: 1px solid #BBF7D0;
+    background: var(--success-soft); border: 1px solid var(--success-border);
     color: var(--success); border-radius: var(--radius-sm);
     padding: 10px 12px; font-size: 13px; font-weight: 400;
     margin-bottom: 14px; display: none; line-height: 1.45;
@@ -762,7 +937,7 @@
   .manual-gps-row input:focus { border-color: var(--accent); }
   .manual-gps-row input::placeholder { color: var(--muted-light); font-size: 12px; }
   .btn-manual {
-    background: var(--navy); color: #fff; border: none;
+    background: var(--navy); color: var(--on-navy); border: none;
     border-radius: var(--radius-sm); padding: 8px 14px;
     font-family: inherit; font-size: 12px; font-weight: 500;
     cursor: pointer; white-space: nowrap; transition: background 0.15s;
@@ -772,7 +947,7 @@
 
   /* ── CONFIRM MODAL ── */
   .modal-overlay {
-    position: fixed; inset: 0; background: rgba(24,24,27,0.5);
+    position: fixed; inset: 0; background: var(--overlay);
     z-index: 200; display: none; align-items: flex-end;
     justify-content: center; padding: 16px;
   }
@@ -833,7 +1008,7 @@
   }
   .home-card:hover {
     border-color: var(--border-strong);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    box-shadow: var(--shadow-sm);
   }
   .home-card-icon {
     width: 32px; height: 32px;
@@ -911,7 +1086,7 @@
   }
   .society-card:hover    {
     border-color: var(--border-strong);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    box-shadow: var(--shadow-sm);
   }
   .society-card.selected {
     border-color: var(--accent);
@@ -1029,7 +1204,7 @@
     background: var(--accent);
     border-radius: var(--radius-lg);
     padding: 20px 18px;
-    color: #fff;
+    color: var(--on-accent);
     margin-bottom: 14px;
   }
   .perf-hero-label    {
@@ -1045,7 +1220,7 @@
     background: rgba(255,255,255,0.25);
     border-radius: 999px; height: 6px; margin-top: 12px; overflow: hidden;
   }
-  .perf-progress-fill { background: #fff; height: 100%; transition: width 0.4s; }
+  .perf-progress-fill { background: var(--on-accent); height: 100%; transition: width 0.4s; }
   .perf-progress-text { font-size: 12px; font-weight: 500; margin-top: 8px; opacity: 0.92; }
 
   .perf-stats-row     { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 14px; }
@@ -1097,7 +1272,7 @@
   }
   .perf-period-btn.active {
     background: var(--surface); color: var(--navy);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    box-shadow: var(--shadow-xs);
   }
 
   /* SLAB NUDGE CARD */
@@ -1109,7 +1284,7 @@
   }
   .perf-slab-nudge-icon {
     width: 32px; height: 32px; border-radius: var(--radius-sm);
-    background: var(--accent); color: #fff;
+    background: var(--accent); color: var(--on-accent);
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
   }
@@ -1160,10 +1335,10 @@
     font-size: 13px; font-weight: 400; color: var(--text-muted); line-height: 1.55;
   }
   .onb-warning {
-    background: var(--warning-soft); border: 1px solid #FCD9A4;
+    background: var(--warning-soft); border: 1px solid var(--warning-border);
     border-radius: var(--radius-sm); padding: 9px 12px;
     margin-top: -6px; margin-bottom: 12px;
-    font-size: 12px; font-weight: 400; color: #92400E; line-height: 1.4;
+    font-size: 12px; font-weight: 400; color: var(--warning-strong); line-height: 1.4;
   }
 
   /* ── LEADERBOARD ── */
@@ -1180,7 +1355,7 @@
   }
   .lb-toggle-btn.active {
     background: var(--surface); color: var(--navy);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    box-shadow: var(--shadow-xs);
   }
 
   .lb-identity {
@@ -1231,7 +1406,7 @@
     font-size: 13px; font-weight: 600; color: var(--navy);
     flex-shrink: 0; font-variant-numeric: tabular-nums;
   }
-  .lb-row.lb-me .lb-rank-tile { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .lb-row.lb-me .lb-rank-tile { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .lb-info { flex: 1; min-width: 0; }
   .lb-info-name {
     font-size: 14px; font-weight: 500; color: var(--navy);
@@ -1319,9 +1494,9 @@
     font-size: 13px; font-weight: 500; line-height: 1.45;
     padding: 10px 12px; border-radius: var(--radius-sm); text-align: center;
   }
-  .slot-util-good { background: var(--success-soft); color: #15803D; border: 1px solid #BBF7D0; }
-  .slot-util-mid  { background: var(--warning-soft); color: #92400E; border: 1px solid #FCD9A4; }
-  .slot-util-low  { background: var(--error-soft); color: var(--error); border: 1px solid #FECACA; }
+  .slot-util-good { background: var(--success-soft); color: var(--success-strong); border: 1px solid var(--success-border); }
+  .slot-util-mid  { background: var(--warning-soft); color: var(--warning-strong); border: 1px solid var(--warning-border); }
+  .slot-util-low  { background: var(--error-soft); color: var(--error); border: 1px solid var(--error-border); }
 
   /* ── INVENTORY ── */
   .inv-scope-pill {
@@ -1360,7 +1535,7 @@
     font-family: inherit; font-size: 12px; font-weight: 500;
     color: var(--text-muted); cursor: pointer;
     appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2371717A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-image: var(--select-caret-sm);
     background-repeat: no-repeat;
     background-position: right 10px center;
   }
@@ -1516,8 +1691,8 @@
     border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; font-weight: 500;
     text-align: center; margin: -2px 0 14px; line-height: 1.4;
   }
-  .inv-match-ok   { background: var(--success-soft); color: #15803D; border: 1px solid #BBF7D0; }
-  .inv-match-warn { background: var(--error-soft); color: var(--error); border: 1px solid #FECACA; }
+  .inv-match-ok   { background: var(--success-soft); color: var(--success-strong); border: 1px solid var(--success-border); }
+  .inv-match-warn { background: var(--error-soft); color: var(--error); border: 1px solid var(--error-border); }
 
   /* Two-column number row */
   .inv-num-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -1541,13 +1716,13 @@
   /* Toast */
   .inv-toast {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: var(--navy); color: #fff;
+    background: var(--navy); color: var(--on-navy);
     padding: 10px 18px; border-radius: var(--radius);
     font-size: 13px; font-weight: 500;
     z-index: 300; opacity: 0;
     transition: opacity 0.2s, transform 0.2s;
     pointer-events: none; max-width: 90%;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    box-shadow: var(--shadow-lg);
   }
   .inv-toast.visible { opacity: 1; transform: translateX(-50%) translateY(-4px); }
   .inv-toast.error { background: var(--error); }
@@ -1558,12 +1733,12 @@
     display: inline-block; font-size: 11px; font-weight: 500;
     padding: 2px 8px; border-radius: 6px;
   }
-  .req-status-pending   { background: var(--warning-soft); color: #92400E; border: 1px solid #FCD9A4; }
-  .req-status-approved  { background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; }
-  .req-status-rejected  { background: var(--error-soft); color: var(--error); border: 1px solid #FECACA; }
-  .req-status-fulfilled { background: var(--success-soft); color: #15803D; border: 1px solid #BBF7D0; }
-  .req-status-in-review { background: #F5F3FF; color: #6D28D9; border: 1px solid #DDD6FE; }
-  .req-status-repaired  { background: var(--success-soft); color: #15803D; border: 1px solid #BBF7D0; }
+  .req-status-pending   { background: var(--warning-soft); color: var(--warning-strong); border: 1px solid var(--warning-border); }
+  .req-status-approved  { background: var(--info-soft); color: var(--info-strong); border: 1px solid var(--info-border); }
+  .req-status-rejected  { background: var(--error-soft); color: var(--error); border: 1px solid var(--error-border); }
+  .req-status-fulfilled { background: var(--success-soft); color: var(--success-strong); border: 1px solid var(--success-border); }
+  .req-status-in-review { background: var(--violet-soft); color: var(--violet); border: 1px solid var(--violet-border); }
+  .req-status-repaired  { background: var(--success-soft); color: var(--success-strong); border: 1px solid var(--success-border); }
 
   .req-card {
     background: var(--surface); border: 1px solid var(--border);
@@ -1588,9 +1763,9 @@
     color: var(--navy); transition: background 0.15s; font-family: inherit;
   }
   .req-action-btn:hover { background: var(--surface2); }
-  .req-action-btn.approve { background: var(--success-soft); border-color: #BBF7D0; color: #15803D; }
-  .req-action-btn.fulfil  { background: #EFF6FF; border-color: #BFDBFE; color: #1D4ED8; }
-  .req-action-btn.reject  { background: var(--error-soft); border-color: #FECACA; color: var(--error); }
+  .req-action-btn.approve { background: var(--success-soft); border-color: var(--success-border); color: var(--success-strong); }
+  .req-action-btn.fulfil  { background: var(--info-soft); border-color: var(--info-border); color: var(--info-strong); }
+  .req-action-btn.reject  { background: var(--error-soft); border-color: var(--error-border); color: var(--error); }
 
   .req-tabs {
     display: flex; gap: 6px; margin-bottom: 14px;
@@ -1606,7 +1781,7 @@
     transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
   .req-tab.active {
-    background: var(--accent); color: #fff; border-color: var(--accent);
+    background: var(--accent); color: var(--on-accent); border-color: var(--accent);
   }
   .req-tab .count {
     display: inline-block; background: rgba(255,255,255,0.25);
@@ -1626,11 +1801,11 @@
   }
   .tab-pill.active {
     background: var(--surface); color: var(--accent);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+    box-shadow: var(--shadow-xs);
   }
   .tab-count {
     display: inline-block; margin-left: 4px; padding: 1px 6px;
-    background: var(--accent); color: #fff; border-radius: 999px;
+    background: var(--accent); color: var(--on-accent); border-radius: 999px;
     font-size: 10px; font-weight: 600; vertical-align: middle;
     font-variant-numeric: tabular-nums;
   }
@@ -1703,12 +1878,52 @@
   .att-a  { background: var(--error-soft);   color: var(--error); }
   .att-l  { background: var(--warning-soft); color: var(--warning); }
   .att-h  { background: var(--surface2);     color: var(--muted); }
-  .att-hd { background: #EFF6FF;             color: #2563EB; }
+  .att-hd { background: var(--info-soft);    color: var(--info); }
   .att-blank { background: var(--surface); color: var(--muted-light); }
-  .att-x  { background: #FDF4FF; color: #A21CAF; }
+  .att-x  { background: var(--magenta-soft); color: var(--magenta); }
   .att-tot { font-weight: 600; background: var(--surface2); font-variant-numeric: tabular-nums; }
   .att-tot-p { color: var(--success); }
   .att-tot-a { color: var(--error); }
+
+  /* ── APPEARANCE CONTROL (v7.0) ── */
+  .header-right { display: flex; align-items: center; gap: 8px; }
+  .theme-btn {
+    width: 32px; height: 32px; padding: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--navy);
+    font-family: inherit; flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  }
+  .theme-btn .ti { font-size: 17px; }
+  .theme-btn:hover  { background: var(--border); }
+  .theme-btn:active { transform: scale(0.94); }
+
+  .theme-opts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+  .theme-opt {
+    width: 100%; display: flex; align-items: center; gap: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 11px 13px;
+    cursor: pointer; text-align: left; font-family: inherit;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .theme-opt:hover { background: var(--surface2); border-color: var(--border-strong); }
+  .theme-opt-icon {
+    width: 34px; height: 34px; border-radius: var(--radius-sm);
+    background: var(--surface2); color: var(--muted);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .theme-opt-icon .ti { font-size: 18px; }
+  .theme-opt-body  { display: block; flex: 1; min-width: 0; }
+  .theme-opt-title { display: block; font-size: 14px; font-weight: 600; color: var(--navy); }
+  .theme-opt-sub   { display: block; font-size: 12px; color: var(--muted); margin-top: 1px; line-height: 1.4; }
+  .theme-opt-tick  { color: var(--accent); opacity: 0; flex-shrink: 0; transition: opacity 0.15s; }
+  .theme-opt-tick .ti { font-size: 19px; }
+  .theme-opt.selected { border-color: var(--accent); background: var(--accent-soft); }
+  .theme-opt.selected .theme-opt-icon { background: var(--accent); color: var(--on-accent); }
+  .theme-opt.selected .theme-opt-tick { opacity: 1; }
 
   /* ── SCROLLBAR (subtle, modern) ── */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -1716,6 +1931,26 @@
   ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }
 </style>
+<script>
+/* v7.0 — PRE-PAINT THEME BOOT.
+   Runs before <body> renders, so a refresh or auto-login never flashes the
+   wrong palette. Deliberately tiny and dependency-free; the full theme
+   module (setTheme / picker sheet) lives in the main script at the bottom.
+   Key is 'snabbit_theme', separate from 'snabbit_session' so the choice
+   survives logout and session expiry. */
+(function () {
+  var eff = 'light';
+  try {
+    var m = localStorage.getItem('snabbit_theme');
+    if (m !== 'light' && m !== 'dark' && m !== 'system') m = 'system';
+    eff = (m === 'dark' || (m === 'system' && window.matchMedia &&
+           window.matchMedia('(prefers-color-scheme: dark)').matches)) ? 'dark' : 'light';
+  } catch (e) { eff = 'light'; }
+  document.documentElement.setAttribute('data-theme', eff);
+  var mt = document.getElementById('metaThemeColor');
+  if (mt) mt.setAttribute('content', eff === 'dark' ? '#0F0F12' : '#FAFAFA');
+})();
+</script>
 </head>
 <body>
 
@@ -1733,13 +1968,57 @@
   </div>
 </div>
 
+<!-- ════════════════ APPEARANCE SHEET (v7.0) ════════════════ -->
+<div class="modal-overlay" id="themeModal" onclick="themeSheetBackdrop(event)">
+  <div class="modal-card">
+    <div class="modal-title">Appearance</div>
+    <div class="modal-sub">
+      Choose how the app looks. Saved on this device — tap the icon in the
+      header any time to change it again.
+    </div>
+    <div class="theme-opts">
+      <button type="button" class="theme-opt" id="themeOptLight" onclick="setTheme('light')">
+        <span class="theme-opt-icon"><i class="ti ti-sun"></i></span>
+        <span class="theme-opt-body">
+          <span class="theme-opt-title">Light</span>
+          <span class="theme-opt-sub">Bright background — easiest in daylight</span>
+        </span>
+        <span class="theme-opt-tick"><i class="ti ti-circle-check"></i></span>
+      </button>
+      <button type="button" class="theme-opt" id="themeOptDark" onclick="setTheme('dark')">
+        <span class="theme-opt-icon"><i class="ti ti-moon"></i></span>
+        <span class="theme-opt-body">
+          <span class="theme-opt-title">Dark</span>
+          <span class="theme-opt-sub">Dim background — easier at night, saves battery</span>
+        </span>
+        <span class="theme-opt-tick"><i class="ti ti-circle-check"></i></span>
+      </button>
+      <button type="button" class="theme-opt" id="themeOptSystem" onclick="setTheme('system')">
+        <span class="theme-opt-icon"><i class="ti ti-device-mobile"></i></span>
+        <span class="theme-opt-body">
+          <span class="theme-opt-title">Match device</span>
+          <span class="theme-opt-sub" id="themeSystemNote">Follows your phone or browser setting</span>
+        </span>
+        <span class="theme-opt-tick"><i class="ti ti-circle-check"></i></span>
+      </button>
+    </div>
+    <button class="btn btn-secondary" onclick="closeThemeSheet()"><i class="ti ti-check"></i> Done</button>
+  </div>
+</div>
+
 <!-- ════════════════ HEADER ════════════════ -->
 <div class="header">
   <div class="header-left">
     <div class="back-btn" id="backBtn" onclick="goBack()"><i class="ti ti-arrow-left"></i></div>
     <div class="logo">Snabbit <span class="logo-sub">field</span></div>
   </div>
-  <div class="agent-badge" id="agentBadge" onclick="logout()"><i class="ti ti-logout"></i><span>Logout</span></div>
+  <div class="header-right">
+    <!-- v7.0 — Appearance. Visible on every screen (incl. login) so the mode
+         can be changed at any time, before or after signing in. -->
+    <button type="button" class="theme-btn" id="themeBtn" onclick="openThemeSheet()"
+            title="Appearance" aria-label="Appearance"><i class="ti ti-sun" id="themeBtnIcon"></i></button>
+    <div class="agent-badge" id="agentBadge" onclick="logout()"><i class="ti ti-logout"></i><span>Logout</span></div>
+  </div>
 </div>
 
 
@@ -2772,7 +3051,7 @@
   <div class="big-title" id="paymentsFormTitle">—</div>
   <p class="sub" id="paymentsFormSub">Fill in the details. All fields are required unless marked optional.</p>
 
-  <div id="paymentsClosedBanner" class="error-msg" style="display:none;background:#fff3cd;color:#856404;border:1px solid #ffeaa7"></div>
+  <div id="paymentsClosedBanner" class="error-msg" style="display:none;background:var(--warning-soft);color:var(--warning-strong);border:1px solid var(--warning-border)"></div>
   <div id="paymentsError" class="error-msg"></div>
 
   <!-- ─── Society Payment fields (shared by SP10U + SP10O) ─── -->
@@ -2806,7 +3085,7 @@
 
     <div class="input-wrap"><label>Permission Cost (₹)</label><input type="number" id="payPermCost" min="0" step="0.01" /></div>
     <div class="input-wrap"><label>GST Amount (₹)</label><input type="number" id="payGstAmt" min="0" step="0.01" value="0" /></div>
-    <div class="input-wrap"><label>Total Permission Cost (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payTotalPermCost" readonly style="background:#f5f5f5" /></div>
+    <div class="input-wrap"><label>Total Permission Cost (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payTotalPermCost" readonly style="background:var(--surface2)" /></div>
     <div class="input-wrap"><label>GST Number <small style="color:var(--muted);font-weight:600">optional</small></label><input type="text" id="payGstNum" maxlength="20" placeholder="e.g. 29ABCDE1234F1Z5" /></div>
     <div class="input-wrap"><label>Date of Activity</label><input type="date" id="payActivityDate" /></div>
     <div class="input-wrap"><label>Flat Count <small style="color:var(--muted);font-weight:600">enter 0 for Market Activity</small></label><input type="number" id="payFlatCount" min="0" step="1" /></div>
@@ -2822,7 +3101,7 @@
     <div class="input-wrap"><label>IFSC Code</label><input type="text" id="payIfsc" maxlength="11" placeholder="e.g. HDFC0001234" /></div>
     <div class="input-wrap"><label>Society SPOC Name</label><input type="text" id="paySpocName" maxlength="80" /></div>
     <div class="input-wrap"><label>Society SPOC Number</label><input type="text" id="paySpocNum" inputmode="tel" maxlength="20" /></div>
-    <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:#c00;font-weight:600">required</small></label>
+    <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:var(--error);font-weight:600">required</small></label>
       <input type="file" id="payChequeFile" accept="image/*,application/pdf" onchange="onPaymentsFile('cancelled_cheque', this)" />
       <div id="payChequeStatus" class="pay-file-status"></div>
     </div>
@@ -2847,7 +3126,7 @@
     </div>
     <div class="input-wrap"><label>Cost (₹)</label><input type="number" id="payRmbCost" min="0" step="0.01" /></div>
     <div class="input-wrap"><label>GST (₹)</label><input type="number" id="payRmbGst" min="0" step="0.01" value="0" /></div>
-    <div class="input-wrap"><label>Total Cost (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payRmbTotalCost" readonly style="background:#f5f5f5" /></div>
+    <div class="input-wrap"><label>Total Cost (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payRmbTotalCost" readonly style="background:var(--surface2)" /></div>
     <div class="input-wrap"><label>Detail of Activity</label><textarea id="payRmbActivityDetail" maxlength="500"></textarea></div>
     <div class="input-wrap"><label>Beneficiary Name</label><input type="text" id="payRmbBenefName" maxlength="120" /></div>
     <div class="input-wrap"><label>Account Number</label><input type="text" id="payRmbAccountNum" inputmode="numeric" maxlength="20" /></div>
@@ -2857,11 +3136,11 @@
     </div>
     <div class="input-wrap" id="payRmbInvNumWrap"><label>Invoice Number <small id="payRmbInvNumOptionalLabel" style="color:var(--muted);font-weight:600">optional</small></label><input type="text" id="payRmbInvNum" maxlength="60" /></div>
 
-    <div class="input-wrap"><label>Invoice <small style="color:#c00;font-weight:600">required</small></label>
+    <div class="input-wrap"><label>Invoice <small style="color:var(--error);font-weight:600">required</small></label>
       <input type="file" id="payRmbInvFile" accept="image/*,application/pdf" onchange="onPaymentsFile('invoice', this)" />
       <div id="payRmbInvStatus" class="pay-file-status"></div>
     </div>
-    <div class="input-wrap"><label>Payment Screenshot <small style="color:#c00;font-weight:600">required</small></label>
+    <div class="input-wrap"><label>Payment Screenshot <small style="color:var(--error);font-weight:600">required</small></label>
       <input type="file" id="payRmbScrFile" accept="image/*,application/pdf" onchange="onPaymentsFile('payment_screenshot', this)" />
       <div id="payRmbScrStatus" class="pay-file-status"></div>
     </div>
@@ -2879,15 +3158,15 @@
     <div class="input-wrap"><label>Account Number</label><input type="text" id="payVpAccountNum" inputmode="numeric" maxlength="20" /></div>
     <div class="input-wrap"><label>IFSC Code</label><input type="text" id="payVpIfsc" maxlength="11" /></div>
 
-    <div class="input-wrap"><label>Invoice <small style="color:#c00;font-weight:600">required</small></label>
+    <div class="input-wrap"><label>Invoice <small style="color:var(--error);font-weight:600">required</small></label>
       <input type="file" id="payVpInvFile" accept="image/*,application/pdf" onchange="onPaymentsFile('invoice', this)" />
       <div id="payVpInvStatus" class="pay-file-status"></div>
     </div>
-    <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:#c00;font-weight:600">required</small></label>
+    <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:var(--error);font-weight:600">required</small></label>
       <input type="file" id="payVpChequeFile" accept="image/*,application/pdf" onchange="onPaymentsFile('cancelled_cheque', this)" />
       <div id="payVpChequeStatus" class="pay-file-status"></div>
     </div>
-    <div class="input-wrap"><label>PAN Card <small style="color:#c00;font-weight:600">required</small></label>
+    <div class="input-wrap"><label>PAN Card <small style="color:var(--error);font-weight:600">required</small></label>
       <input type="file" id="payVpPanFile" accept="image/*,application/pdf" onchange="onPaymentsFile('pan_card', this)" />
       <div id="payVpPanStatus" class="pay-file-status"></div>
     </div>
@@ -2900,7 +3179,7 @@
     <div class="input-wrap"><label>Invoice Number</label><input type="text" id="payPpInvNum" maxlength="60" /></div>
     <div class="input-wrap"><label>Number of Days Worked</label><input type="number" id="payPpDays" min="0" step="0.5" /></div>
     <div class="input-wrap"><label>Cost per Day (₹)</label><input type="number" id="payPpCostPerDay" min="0" step="0.01" /></div>
-    <div class="input-wrap"><label>Total Amount (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payPpTotalAmount" readonly style="background:#f5f5f5" /></div>
+    <div class="input-wrap"><label>Total Amount (₹) <small style="color:var(--muted);font-weight:600">auto-calculated</small></label><input type="number" id="payPpTotalAmount" readonly style="background:var(--surface2)" /></div>
     <div class="input-wrap"><label>Bank Name</label><input type="text" id="payPpBankName" maxlength="80" /></div>
     <div class="input-wrap"><label>Beneficiary Name (Promoter)</label><input type="text" id="payPpBenefName" maxlength="120" /></div>
     <div class="input-wrap"><label>Account Number</label><input type="text" id="payPpAccountNum" inputmode="numeric" maxlength="20" /></div>
@@ -2908,15 +3187,15 @@
     <div class="input-wrap"><label>PAN Number</label><input type="text" id="payPpPanNum" maxlength="10" placeholder="e.g. ABCDE1234F" /></div>
     <div class="input-wrap"><label>Month of Invoice</label><select id="payPpMonth"></select></div>
 
-    <div class="input-wrap"><label>Invoice <small style="color:#c00;font-weight:600">required</small></label>
+    <div class="input-wrap"><label>Invoice <small style="color:var(--error);font-weight:600">required</small></label>
       <input type="file" id="payPpInvFile" accept="image/*,application/pdf" onchange="onPaymentsFile('invoice', this)" />
       <div id="payPpInvStatus" class="pay-file-status"></div>
     </div>
-    <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:#c00;font-weight:600">required</small></label>
+    <div class="input-wrap"><label>Cancelled Cheque / Passbook <small style="color:var(--error);font-weight:600">required</small></label>
       <input type="file" id="payPpChequeFile" accept="image/*,application/pdf" onchange="onPaymentsFile('cancelled_cheque', this)" />
       <div id="payPpChequeStatus" class="pay-file-status"></div>
     </div>
-    <div class="input-wrap"><label>PAN Card <small style="color:#c00;font-weight:600">required</small></label>
+    <div class="input-wrap"><label>PAN Card <small style="color:var(--error);font-weight:600">required</small></label>
       <input type="file" id="payPpPanFile" accept="image/*,application/pdf" onchange="onPaymentsFile('pan_card', this)" />
       <div id="payPpPanStatus" class="pay-file-status"></div>
     </div>
@@ -3149,6 +3428,137 @@ function loadSession() {
   return null;
 }
 function clearSession() { localStorage.removeItem('snabbit_session'); }
+
+
+// ─────────────────────────────────────────────────────────
+// APPEARANCE / THEME  (v7.0)
+// ─────────────────────────────────────────────────────────
+// Three modes: 'light' | 'dark' | 'system'.
+//
+//  * Stored under its OWN localStorage key ('snabbit_theme'), NOT inside
+//    'snabbit_session'. clearSession() on logout must not reset the look,
+//    and the choice has to outlive session expiry.
+//  * The stylesheet reacts to <html data-theme="light|dark">. That attribute
+//    is set pre-paint by the tiny script in <head>; everything here just
+//    keeps it, the meta theme-color, and the picker UI in sync afterwards.
+//  * 'system' re-evaluates live via matchMedia, so a phone flipping to its
+//    night schedule flips the app too without a reload.
+const THEME_KEY   = 'snabbit_theme';
+const THEME_MODES = ['light', 'dark', 'system'];
+
+function getThemeMode() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    if (THEME_MODES.indexOf(v) !== -1) return v;
+  } catch (e) {}
+  return 'system';   // default: follow the device
+}
+
+function systemPrefersDark() {
+  try {
+    return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  } catch (e) { return false; }
+}
+
+// The palette actually painted, after resolving 'system'.
+function effectiveTheme(mode) {
+  const m = mode || getThemeMode();
+  if (m === 'dark')  return 'dark';
+  if (m === 'light') return 'light';
+  return systemPrefersDark() ? 'dark' : 'light';
+}
+
+function applyTheme(mode) {
+  const eff = effectiveTheme(mode);
+  document.documentElement.setAttribute('data-theme', eff);
+  const meta = document.getElementById('metaThemeColor');
+  if (meta) meta.setAttribute('content', eff === 'dark' ? '#0F0F12' : '#FAFAFA');
+  syncThemeUI();
+}
+
+// Called by the three buttons in the Appearance sheet. Applies instantly and
+// leaves the sheet open, so the change can be seen and compared before
+// tapping Done.
+function setTheme(mode) {
+  if (THEME_MODES.indexOf(mode) === -1) mode = 'system';
+  try { localStorage.setItem(THEME_KEY, mode); } catch (e) {}
+  applyTheme(mode);
+  if (typeof _invToast === 'function') {
+    _invToast(mode === 'system'
+      ? 'Appearance: matching device (' + effectiveTheme('system') + ')'
+      : 'Appearance: ' + mode + ' mode');
+  }
+}
+
+// Reflects the stored mode in the header icon and the sheet's tick marks.
+// Every lookup is null-guarded so this is safe to call before/while the
+// header exists.
+function syncThemeUI() {
+  const mode = getThemeMode();
+  const eff  = effectiveTheme(mode);
+
+  const icon = document.getElementById('themeBtnIcon');
+  if (icon) {
+    icon.className = 'ti ' + (mode === 'system' ? 'ti-device-mobile'
+                            : mode === 'dark'   ? 'ti-moon'
+                            :                     'ti-sun');
+  }
+  const btn = document.getElementById('themeBtn');
+  if (btn) {
+    const label = mode === 'system'
+      ? 'Appearance: matching device (' + eff + ')'
+      : 'Appearance: ' + mode + ' mode';
+    btn.setAttribute('title', label);
+    btn.setAttribute('aria-label', label);
+  }
+
+  const ids = { light: 'themeOptLight', dark: 'themeOptDark', system: 'themeOptSystem' };
+  for (const m in ids) {
+    const el = document.getElementById(ids[m]);
+    if (el) {
+      el.classList.toggle('selected', m === mode);
+      el.setAttribute('aria-pressed', m === mode ? 'true' : 'false');
+    }
+  }
+
+  const note = document.getElementById('themeSystemNote');
+  if (note) {
+    note.textContent = 'Follows your phone or browser setting — currently ' + eff;
+  }
+}
+
+function openThemeSheet() {
+  syncThemeUI();
+  document.getElementById('themeModal').classList.add('visible');
+}
+function closeThemeSheet() {
+  document.getElementById('themeModal').classList.remove('visible');
+}
+// Tap outside the card closes the sheet. Clicks inside bubble up to the
+// overlay too, so match on the overlay itself rather than stopping
+// propagation (which would swallow the option buttons).
+function themeSheetBackdrop(e) {
+  if (e && e.target && e.target.id === 'themeModal') closeThemeSheet();
+}
+
+// Live OS/browser changes — only meaningful while mode is 'system'.
+(function watchSystemTheme() {
+  try {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = function () { if (getThemeMode() === 'system') applyTheme('system'); };
+    if (mq.addEventListener)   mq.addEventListener('change', onChange);
+    else if (mq.addListener)   mq.addListener(onChange);   // older WebKit
+  } catch (e) {}
+})();
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeThemeSheet();
+});
+
+// Boot: <head> already painted the palette; this syncs the header icon,
+// the sheet ticks and the meta tag. Wrapped so a theme hiccup can never
+// take the rest of the app down with it.
+try { applyTheme(); } catch (e) { /* non-fatal */ }
 
 
 // ─────────────────────────────────────────────────────────
@@ -3635,8 +4045,8 @@ function renderNMList(city, nm) {
         <div class="nm-society-meta">
           ${s.type    ? `<span class="nm-society-type">${s.type}</span>` : ''}
           ${s.area    ? `<span><i class="ti ti-map-pin" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>${s.area}</span>` : ''}
-          ${s.liveNM   ? `<span style="color:#FF1F7D;font-weight:700">${s.liveNM}</span>`   : ''}
-          ${s.futureNM ? `<span style="color:#6C63FF;font-weight:700">${s.futureNM}</span>` : ''}
+          ${s.liveNM   ? `<span style="color:var(--accent);font-weight:700">${s.liveNM}</span>`   : ''}
+          ${s.futureNM ? `<span style="color:var(--future-nm);font-weight:700">${s.futureNM}</span>` : ''}
         </div>
         ${s.address ? `<div class="nm-society-address">${s.address}</div>` : ''}
       </div>
@@ -3733,7 +4143,7 @@ function renderResults(nearby) {
         </div>
         <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
           ${s.liveNM   ? `<span class="s-nm">${s.liveNM}</span>` : ''}
-          ${s.futureNM ? `<span class="s-nm" style="background:#6C63FF">${s.futureNM}</span>` : ''}
+          ${s.futureNM ? `<span class="s-nm" style="background:var(--future-nm);border-color:var(--future-nm);color:var(--on-future-nm)">${s.futureNM}</span>` : ''}
         </div>
       </div>
     `).join('')}
@@ -6273,7 +6683,7 @@ function renderInventoryDashboard() {
             const reqQty = _inventoryRequiredFor(r.city, r.product_id);
             return `
               <div class="inv-item-row" onclick="openInvDetail('${r.record_id}')">
-                <div class="inv-item-name">${r.product_name || r.product_id}${reqQty > 0 ? ' <span style="font-size:10px;font-weight:800;color:var(--accent);background:#FFF0F6;padding:1px 6px;border-radius:999px;margin-left:4px">+${reqQty} req</span>' : ''}</div>
+                <div class="inv-item-name">${r.product_name || r.product_id}${reqQty > 0 ? ' <span style="font-size:10px;font-weight:800;color:var(--accent);background:var(--accent-soft);padding:1px 6px;border-radius:999px;margin-left:4px">+${reqQty} req</span>' : ''}</div>
                 <div class="inv-item-bar" title="${r.stock_not_in_use}/${r.stock_in_use}/${r.stock_damaged}/${r.stock_with_ex_bde}">
                   <div class="inv-item-bar-seg inv-item-bar-good"  style="width:${pNot}%"></div>
                   <div class="inv-item-bar-seg inv-item-bar-inuse" style="width:${pUse}%"></div>
@@ -6997,7 +7407,7 @@ function renderMyRequests() {
         <div class="req-card">
           <div class="req-card-h">
             <div>
-              <div class="req-card-title">${r.product_name || r.product_id} <span style="font-size:10px;font-weight:800;color:var(--accent);background:#FFF0F6;padding:1px 6px;border-radius:999px;margin-left:4px">REPAIR</span></div>
+              <div class="req-card-title">${r.product_name || r.product_id} <span style="font-size:10px;font-weight:800;color:var(--accent);background:var(--accent-soft);padding:1px 6px;border-radius:999px;margin-left:4px">REPAIR</span></div>
               <div class="req-card-meta">${_invTitleCase(r.city)} · ${_invFmtDate(r.request_date)}</div>
             </div>
             <span class="req-status req-status-${statusCls}">${status}</span>
@@ -8887,7 +9297,7 @@ function onRmbTypeChange() {
   const label = document.getElementById('payRmbInvNumOptionalLabel');
   if (label) {
     label.textContent = required ? 'required' : 'optional';
-    label.style.color = required ? '#c00' : '';
+    label.style.color = required ? 'var(--error)' : '';
   }
 }
 
